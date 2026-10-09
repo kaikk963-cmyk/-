@@ -1,7 +1,7 @@
 // 確率まわりの総点検。スペックごとに、
 //  1) 大当り確率・RUSH突入率・ST継続率・平均出玉が設計どおりか
 //  2) 開発者タブの「出現」（約1/○回転）が実際の出現頻度と合っているか
-// をモンテカルロで確かめる。実行: node test/audit.test.js [回転数]
+// をモンテカルロで確かめる（許容幅はサンプル数に応じた約3.5σ）。実行: node test/audit.test.js [回転数]
 const D = require("../app/data.js");
 const { createEngine } = require("../app/engine.js");
 
@@ -31,9 +31,9 @@ for (const key of Object.keys(D.SPECS)) {
     if (r.kind === "hit") { hit++; if (r.rush) rushIn++; }
     else if (r.kind === "charge") { charge++; if (r.rush) rushIn++; }
   }
-  check("図柄揃い 1/x", N / hit, 1 / S.hitProb, 0.03);
-  if (S.chargeProb) check("霊力チャージ 1/x", N / charge, 1 / S.chargeProb, 0.04);
-  check("合算 1/x", N / (hit + charge), 1 / (S.hitProb + S.chargeProb), 0.03);
+  check("図柄揃い 1/x", N / hit, 1 / S.hitProb, 3.5 / Math.sqrt(hit));
+  if (S.chargeProb) check("霊力チャージ 1/x", N / charge, 1 / S.chargeProb, 3.5 / Math.sqrt(charge));
+  check("合算 1/x", N / (hit + charge), 1 / (S.hitProb + S.chargeProb), 3.5 / Math.sqrt(hit + charge));
   const entryWant = (S.hitProb * S.hitRushRate + S.chargeProb * S.chargeRushRate) / (S.hitProb + S.chargeProb);
   check("初当りのRUSH突入率", rushIn / (hit + charge), entryWant, 0.04);
 
@@ -45,7 +45,7 @@ for (const key of Object.keys(D.SPECS)) {
   check("RUSH継続率", cont / trials, 1 - Math.pow(1 - S.rushProb, S.stSpins), 0.02);
   let big = 0, rh = 0;
   for (let i = 0; i < N / 2; i++) { const r = eng.drawRush(); if (r.kind === "hit") { rh++; if (r.big) big++; } }
-  check("RUSH中の当り 1/x", (N / 2) / rh, 1 / S.rushProb, 0.04);
+  check("RUSH中の当り 1/x", (N / 2) / rh, 1 / S.rushProb, 3.5 / Math.sqrt(rh));
   check("上位BONUS（上乗せ）の割合", big / rh, S.rush6000Rate, 0.15);
 
   // 2) 開発者タブの「出現」表示（app.js の devFreq と同じ式）と実測
@@ -73,7 +73,7 @@ for (const key of Object.keys(D.SPECS)) {
       const shown = 1 / (P * o.share + (1 - P) * missRate(o, P)); // 表示される「約1/○」
       const c = counts[(kind === "hold" ? "sen:" : "hand:") + o.label] || 0;
       if (c < 30) { console.log(`·· ${(title + " " + o.label).padEnd(36)} 表示 1/${shown.toFixed(0)}  実測サンプル不足`); continue; }
-      check(`${title} ${o.label} 出現1/x`, M / c, shown, 0.12);
+      check(`${title} ${o.label} 出現1/x`, M / c, shown, Math.max(0.1, 3.5 / Math.sqrt(c))); // まれな演出はサンプル数に応じて許容幅を広げる
     }
   }
 }

@@ -153,6 +153,18 @@
         result = FORCED[force.kind]();
         if (rush && result.kind !== "miss") result = { kind: "hit", rush: true, big: rng() < S.rush6000Rate };
       }
+      // 先バレの強制：先に出す先バレを決めて、その信頼度どおりに当否を決め直す（EXなら必ず大当り）
+      let forcedSen = null;
+      if (!rush && force && force.senbare) {
+        const g = D.SENBARE[custom.senbare] || D.SENBARE.s40;
+        let r = rng() * g.options.reduce((a, o) => a + o.share, 0);
+        forcedSen = g.options.find((o) => (r -= o.share) < 0) || g.options[0];
+        if (!FORCED[force.kind]) {
+          result = rng() < forcedSen.rel ? { kind: "hit", rush: forcedSen.rushOnly ? true : rng() < S.hitRushRate } : { kind: "miss", rush: false };
+        } else if (result.kind === "hit" ? forcedSen.rushOnly && !result.rush : forcedSen.rel >= 1) {
+          forcedSen = g.options.find((o) => !o.rushOnly && o.rel < 1) || null; // 結果の固定と食い違う先バレは出さない
+        }
+      }
       const out = rush ? { hit: result.kind === "hit", rush: true } : outOf(result);
       const hold = {
         id: ++holdSeq, mode, result,
@@ -188,10 +200,9 @@
         }
       }
 
-      if (!rush && force && force.senbare && !hold.senbare) {
+      if (forcedSen) {
         const g = D.SENBARE[custom.senbare] || D.SENBARE.s40;
-        const s = out.hit ? pick(g, out, P.spin, S.hitRushRate) || g.options[0] : g.options[0];
-        hold.senbare = { sound: s.sound, info: { group: `${g.name}（強制）`, label: s.label, rel: s.rel } };
+        hold.senbare = { sound: forcedSen.sound, info: { group: `${g.name}（強制）`, label: forcedSen.label, rel: forcedSen.rel } };
         hold.ura = result.kind === "hit" && result.rush && S.hitRushRate < 1 && rng() < D.URA_BUTTON_RATE;
       }
 
@@ -395,6 +406,16 @@
 
     // ---------------- 通常時シナリオ ----------------
 
+    // ハズレのリーチを、ハズレ時の出現率の比で1つ選ぶ（必ずどれかを返す）
+    function pickMissReach() {
+      const g = D.NORMAL_REACH;
+      const norm = shareNorm(g);
+      const ws = g.options.map((o) => missWeight(o, P.spin, norm));
+      let r = rng() * ws.reduce((a, w) => a + w, 0);
+      for (let i = 0; i < ws.length; i++) if ((r -= ws[i]) < 0) return g.options[i];
+      return g.options[0];
+    }
+
     function normalScenario(hold, custom) {
       const result = hold.result;
       const out = outOf(result);
@@ -438,7 +459,9 @@
         }
       }
 
-      const reach = pick(D.NORMAL_REACH, out, P.spin, S.hitRushRate);
+      let reach = pick(D.NORMAL_REACH, out, P.spin, S.hitRushRate);
+      // 先バレした保留は、ハズレでも必ずリーチまでは発展する（実機と同じく先バレからの素ハズレはない）
+      if (!reach && hold.senbare && !out.hit) reach = pickMissReach();
 
       if (reach) {
         for (const g of D.NORMAL_PRE_REACH) {

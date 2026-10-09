@@ -24,7 +24,7 @@
       holds: [], rushHolds: [],
       history: [], graph: [0], log: [],
       completed: false,
-      devV: 2,
+      devV: 3,
       custom: { ...DEFAULT_CUSTOM, ...custom },
       settings: { ...DEFAULT_SETTINGS, ...settings },
       dev: { ...DEFAULT_DEV, ...dev },
@@ -51,10 +51,14 @@
       }
       s.dev = { ...DEFAULT_DEV, ...s.dev };
       // 役物投下ボタンは最初から出す（以前は初期OFFだった）
-      if (s.devV !== 2) {
-        s.dev.dropBtn = "on";
-        s.devV = 2;
+      if ((s.devV || 0) < 2) s.dev.dropBtn = "on";
+      // 確定演出（EX先バレ・復活）の信頼度は100%固定にした。以前に書き換わった値は消す
+      if ((s.devV || 0) < 3) {
+        for (const k of Object.keys(s.dev.overrides || {})) {
+          if (/^(senbare\.ex|revive|reviveRush):/.test(k)) delete s.dev.overrides[k];
+        }
       }
+      s.devV = 3;
       s.fired = s.fired || 0;
       s.returns = s.returns || 0;
       if (!D.CUSTOMS.senbare.choices[s.custom.senbare]) s.custom.senbare = DEFAULT_CUSTOM.senbare;
@@ -414,6 +418,29 @@
     render();
   }
 
+  // 役物投下ボタン：陰陽玉が落ちたら大当り。次に回る保留（なければ次の入賞）を大当りにする
+  let yakuPending = null;
+  function yakumonoDrop() {
+    window.Sound.unlock();
+    stage.drop("normal", false, "yakumono");
+    const rush = state.mode === "rush";
+    const list = rush ? state.rushHolds : state.holds;
+    const kind = rush ? "rushHit" : Math.random() < S.hitRushRate ? "rushHit" : "hit";
+    if (list.length && !list[0].yaku) {
+      const h = engine.makeHold(rush ? "rush" : "normal", state.custom, { kind });
+      h.yaku = true;
+      h.color = "gold";
+      h.shown = "gold";
+      h.reveal = "entry";
+      list[0] = h;
+      renderHolds();
+    } else if (!list.length) {
+      yakuPending = kind;
+    }
+    showToast(list.length ? "次の変動で大当り！" : "次の入賞で大当り！");
+    save();
+  }
+
   // 開発者用：RUSHを強制的に終わらせる（変動中なら、その変動とBONUSが終わってから）
   let endRushRequested = false;
   function requestEndRush() {
@@ -666,6 +693,11 @@
 
   // 次に入賞する保留の結果・先バレを固定する（1回だけ、先バレは毎回も可）
   function takeForce(mode) {
+    if (yakuPending) {
+      const k = mode === "rush" ? "rushHit" : yakuPending;
+      yakuPending = null;
+      return { kind: k, senbare: false, yaku: true };
+    }
     const kind = state.dev.force !== "none" ? state.dev.force : null;
     const senbare = mode === "normal" && state.dev.senbare !== "off";
     if (!kind && !senbare) return null;
@@ -699,18 +731,18 @@
     if (S.key !== "middle") body += `<p class="note">いまは<b>${S.label}</b>です。信頼度の入力欄はライトミドルでの値で、甘デジでは実機の甘デジ版と同じく「ハズレ時の出方はそのまま・当たりやすくなった分だけ信頼度が上がる」ので、入力欄の下にいまのスペックでの信頼度を出しています。</p>`;
     body += field("次の入賞を固定（1回）", "次に入賞した保留1つの結果を固定する。RUSH中はハズレ以外が大当りになる。",
       seg("dev.force", { none: "なし", rushHit: "大当り→RUSH", hit: "大当り→通常", charge: "チャージ", miss: "ハズレ" }, state.dev.force));
-    body += field("先バレを強制", "保留入賞時に陰陽玉を必ず落とす（先バレのカスタムがOFFでも落ちる）。",
+    body += field("先バレを強制", "保留入賞時に陰陽玉を必ず落とす（先バレのカスタムがOFFでも落ちる）。当否は落ちた先バレの信頼度どおりに決まり、EXなら必ず大当り。",
       seg("dev.senbare", { off: "OFF", once: "次の1回", always: "毎回" }, state.dev.senbare));
     body += field("陰陽玉を今すぐ落とす", "役物を落とす演出だけを出す。抽選結果には関係しない。当たりにしたいときは「次の入賞を固定」と組み合わせる。音の差し替えは「サウンド」タブ。",
       `<div class="drop-btns"><button type="button" data-drop="normal">通常音</button><button type="button" data-drop="low">低音</button><button type="button" data-drop="high">高音</button><button type="button" data-drop="weak">弱落下</button></div>`);
     body += field("RUSHを強制終了", "弾幕RUSH中に押すと、今の変動（とBONUS）が終わったところでRUSHを終える。", `<button type="button" class="btn-danger" data-endrush ${state.mode === "rush" ? "" : "disabled"}>${state.mode === "rush" ? "RUSHを今すぐ終わらせる" : "RUSH中だけ押せます"}</button>`);
-    body += field("メイン画面に役物投下ボタン", "PUSHとレバーの横に「役物投下」ボタンと、RUSH中は「RUSH終了」ボタンを出す（初期ON）。", seg("dev.dropBtn", { off: "OFF", on: "ON" }, state.dev.dropBtn));
+    body += field("メイン画面に役物投下ボタン", "PUSHとレバーの横に「役物投下」ボタンと、RUSH中は「RUSH終了」ボタンを出す（初期ON）。役物投下を押すと陰陽玉が落ちて、次の変動（保留がなければ次の入賞）が大当りになる。", seg("dev.dropBtn", { off: "OFF", on: "ON" }, state.dev.dropBtn));
     for (const d of devGroups()) {
       const changed = d.group.options.some((o) => state.dev.overrides[devKey(d, o)]);
       const rows = d.group.options.map((o) => {
         const k = devKey(d, o);
         return `<tr><th>${o.label}${o.rushOnly ? "<br><small>RUSH直行のみ</small>" : ""}</th>
-          <td><input class="num-in" type="number" inputmode="decimal" min="0.1" max="100" step="0.1" data-dev="${k}" data-field="rel" value="${+(engine.baseOf(o) * 100).toFixed(2)}" aria-label="${o.label}の信頼度（%・ミドル基準）">${S.key !== "middle" && Math.abs(o.rel - engine.baseOf(o)) > 1e-6 ? `<small class="now-rel">${S.short}で${+(o.rel * 100).toFixed(1)}%</small>` : ""}</td>
+          <td><input class="num-in" type="number" inputmode="decimal" min="0.1" max="100" step="0.1" data-dev="${k}" data-field="rel" value="${+(engine.baseOf(o) * 100).toFixed(2)}" ${devDefaults[k] && devDefaults[k].rel >= 1 ? 'disabled title="確定演出なので100%固定"' : ""} aria-label="${o.label}の信頼度（%・ミドル基準）">${S.key !== "middle" && Math.abs(o.rel - engine.baseOf(o)) > 1e-6 ? `<small class="now-rel">${S.short}で${+(o.rel * 100).toFixed(1)}%</small>` : ""}</td>
           <td><input class="num-in" type="number" inputmode="decimal" min="0" max="100" step="0.1" data-dev="${k}" data-field="share" value="${+(o.share * 100).toFixed(2)}" aria-label="${o.label}の当たり時の出現割合（%）"></td>
           <td class="freq">${devFreq(o, d)}</td></tr>`;
       }).join("");
@@ -857,8 +889,9 @@
       const o = d && d.group.options.find((x) => x.id === oid);
       if (!o) return;
       // 信頼度の入力欄はミドル基準の値（甘デジではそこから自動で上がる）
-      const next = { rel: field === "rel" ? v : engine.baseOf(o), share: field === "share" ? v : o.share };
       const def = devDefaults[k];
+      if (field === "rel" && def.rel >= 1) return renderMenu(); // 確定演出（EX・復活など）は100%固定
+      const next = { rel: field === "rel" ? v : engine.baseOf(o), share: field === "share" ? v : o.share };
       if (Math.abs(next.rel - def.rel) < 1e-9 && Math.abs(next.share - def.share) < 1e-9) delete state.dev.overrides[k];
       else state.dev.overrides[k] = next;
     }
@@ -1235,10 +1268,7 @@
       const keys = Object.keys(D.SPECS);
       setSpec(keys[(keys.indexOf(S.key) + 1) % keys.length]);
     });
-    $("dropBtn").addEventListener("click", () => {
-      window.Sound.unlock();
-      stage.drop("normal", false, "yakumono");
-    });
+    $("dropBtn").addEventListener("click", yakumonoDrop);
     $("menuTabs").addEventListener("click", (e) => {
       const b = e.target.closest("[data-tab]");
       if (!b) return;
