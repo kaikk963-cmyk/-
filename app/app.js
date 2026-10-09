@@ -8,7 +8,7 @@
   const fmt = (n) => Math.round(n).toLocaleString("ja-JP");
 
   const DEFAULT_CUSTOM = { senbare: "s40", sakiyomi: "osusume", leverBuru: "off", impact: "off", rushMode: "default", challenge: "koumakan" };
-  const DEFAULT_SETTINGS = { boardV: 3, board: "on", shot: "left", autoShot: "on", leftStrength: 20, rightStrength: 90, hesoOpen: 1.5, rate: 18, speed: "normal", autoPush: "off", sound: "on", bgm: "off", volume: 0.7, vibe: "on", showRel: "on" };
+  const DEFAULT_SETTINGS = { boardV: 4, board: "on", shot: "left", autoShot: "on", leftStrength: 20, rightStrength: 90, hesoOpen: 1.75, rate: 18, speed: "normal", autoPush: "off", sound: "on", bgm: "off", volume: 0.7, vibe: "on", showRel: "on" };
   const SPEEDS = { slow: 1.35, normal: 1, fast: 0.5, turbo: 0.2 };
   const SPEED_LABEL = { slow: "ゆっくり", normal: "標準", fast: "高速", turbo: "爆速" };
   const DEFAULT_DEV = { overrides: {}, force: "none", senbare: "off", rush6000: null, dropBtn: "off" };
@@ -320,7 +320,22 @@
     render();
   }
 
+  // 開発者用：RUSHを強制的に終わらせる（変動中なら、その変動とBONUSが終わってから）
+  let endRushRequested = false;
+  function requestEndRush() {
+    if (state.mode !== "rush") return;
+    endRushRequested = true;
+    if (!running) {
+      running = true;
+      endRush().finally(() => {
+        running = false;
+        afterSpin();
+      });
+    }
+  }
+
   async function endRush() {
+    endRushRequested = false;
     const line = D.SERIFU.rushEnd[Math.floor(Math.random() * D.SERIFU.rushEnd.length)];
     await stage.play([{ t: "rushEnd", chain: state.chain, balls: state.chainBalls }, { t: "serif", char: line[0], text: line[1], color: "white" }]);
     addHistory({ type: "end", label: `弾幕RUSH終了 ${state.chain}連`, balls: state.chainBalls, at: null });
@@ -362,7 +377,10 @@
     running = true;
     try {
       while (!state.completed && !pendingReset) {
-        if (state.mode === "rush") {
+        if (state.mode === "rush" && endRushRequested) {
+          await endRush();
+          afterSpin();
+        } else if (state.mode === "rush") {
           if (!handleOn && !state.rushHolds.length) break;
           if (useBoard() && !state.rushHolds.length) await waitEntry();
           else await spinRush();
@@ -545,7 +563,8 @@
       seg("dev.senbare", { off: "OFF", once: "次の1回", always: "毎回" }, state.dev.senbare));
     body += field("陰陽玉を今すぐ落とす", "役物を落とす演出だけを出す。抽選結果には関係しない。当たりにしたいときは「次の入賞を固定」と組み合わせる。",
       `<div class="drop-btns"><button type="button" data-drop="normal">通常音</button><button type="button" data-drop="low">低音</button><button type="button" data-drop="high">高音</button><button type="button" data-drop="weak">弱落下</button></div>`);
-    body += field("メイン画面に落下ボタン", "PUSHとレバーの横に「役物投下」ボタンを出す。", seg("dev.dropBtn", { off: "OFF", on: "ON" }, state.dev.dropBtn));
+    body += field("RUSHを強制終了", "弾幕RUSH中に押すと、今の変動（とBONUS）が終わったところでRUSHを終える。", `<button type="button" class="btn-danger" data-endrush ${state.mode === "rush" ? "" : "disabled"}>${state.mode === "rush" ? "RUSHを今すぐ終わらせる" : "RUSH中だけ押せます"}</button>`);
+    body += field("メイン画面に開発ボタン", "PUSHとレバーの横に「役物投下」ボタンと、RUSH中は「RUSH終了」ボタンを出す。", seg("dev.dropBtn", { off: "OFF", on: "ON" }, state.dev.dropBtn));
     for (const d of devGroups()) {
       const changed = d.group.options.some((o) => state.dev.overrides[devKey(d, o)]);
       const rows = d.group.options.map((o) => {
@@ -564,7 +583,7 @@
     const big = state.dev.rush6000 ?? devDefaults.rush6000;
     body += field("ハンドルの強さ（物理盤面）", "左打ち・右打ちを選んだときの打ち出しの強さ（0〜100）。左打ちは15〜20あたりがよく回る。",
       `<div class="drop-btns" style="grid-template-columns:auto 1fr auto 1fr;align-items:center">左<input class="num-in" type="number" min="0" max="100" step="1" data-strength="leftStrength" value="${state.settings.leftStrength}" aria-label="左打ちの強さ">右<input class="num-in" type="number" min="0" max="100" step="1" data-strength="rightStrength" value="${state.settings.rightStrength}" aria-label="右打ちの強さ"></div>`);
-    body += field("ヘソ釘の開き（物理盤面）", "大きいほどヘソに入りやすい。標準は1.5。", `<input id="hesoRange" class="range" type="range" min="1" max="4" step="0.25" value="${state.settings.hesoOpen}">`, `<b id="hesoVal">${state.settings.hesoOpen}</b>`);
+    body += field("ヘソ釘の開き（物理盤面）", "大きいほどヘソで弾かれにくく、よく回る。標準は1.75（約19回転/1000円）。", `<input id="hesoRange" class="range" type="range" min="0.5" max="2.5" step="0.25" value="${state.settings.hesoOpen}">`, `<b id="hesoVal">${state.settings.hesoOpen}</b>`);
     body += field("夢想封印MAX（6000発）の割合", "RUSH中の大当りのうち、BONUS中に陰陽玉が落ちて6000発になる割合。",
       `<input class="num-in wide" type="number" inputmode="decimal" min="0" max="100" step="0.5" data-dev="rush6000" value="${+(big * 100).toFixed(2)}" aria-label="6000発の割合（%）">`, `<b>${+(big * 100).toFixed(1)}%</b>`);
     body += `<div class="field"><button type="button" class="btn-danger" id="devReset">すべて元の値に戻す</button></div>`;
@@ -674,6 +693,8 @@
   }
 
   function renderControls() {
+    const devBtns = state.dev.dropBtn === "on";
+    $("rushEndBtn").hidden = !(devBtns && state.mode === "rush");
     const hb = $("handleBtn");
     hb.classList.toggle("on", handleOn);
     hb.setAttribute("aria-pressed", String(handleOn));
@@ -969,6 +990,10 @@
       else if (e.target.matches("[data-asset]")) onArtFile(e.target);
     });
     $("menu").addEventListener("click", async (e) => {
+      if (e.target.closest("[data-endrush]")) {
+        requestEndRush();
+        closeMenu();
+      }
       const pv = e.target.closest("[data-preview]");
       if (pv) window.Sound.preview(pv.dataset.preview, "normal");
       const drop = e.target.closest("[data-drop]");
@@ -987,6 +1012,7 @@
     });
     $("leftShot").addEventListener("click", () => setShot("left"));
     $("rightShot").addEventListener("click", () => setShot("right"));
+    $("rushEndBtn").addEventListener("click", requestEndRush);
     $("dropBtn").addEventListener("click", () => {
       window.Sound.unlock();
       stage.drop("normal");

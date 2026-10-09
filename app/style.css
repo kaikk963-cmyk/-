@@ -753,7 +753,8 @@ button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px s
 .asset-row button { font-size: 13px; }
 .drop-btns { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
 .drop-btns button { padding: 10px 4px; font-size: 13px; }
-.controls.has-drop { grid-template-columns: 1.15fr 1fr 1fr 0.8fr; }
+.controls.has-drop { grid-template-columns: none; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 6px; }
+.controls.has-drop .ctl small { font-size: 9px; }
 .ctl.drop { background: radial-gradient(circle at 50% 35%, #ffffff, #f0d9dc 45%, #c22a3a); border-color: #ffd0d6; color: #3a0610; }
 .ctl.drop small { color: #5a1420; }
 
@@ -790,14 +791,14 @@ button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px s
 .shot-hint { position: absolute; left: 50%; top: 8px; transform: translateX(-50%); padding: 4px 12px; border-radius: 99px; background: var(--shu); color: #fff; font-weight: 700; font-size: 13px; animation: pulse 0.5s ease-in-out infinite alternate; white-space: nowrap; }
 
 /* 液晶を盤面に埋め込む */
-.machine-board { position: relative; aspect-ratio: 300 / 440; max-width: 100%; border-radius: 18px; overflow: hidden; background: var(--night-2); }
+.machine-board { position: relative; aspect-ratio: 300 / 464; max-width: 100%; border-radius: 18px; overflow: hidden; background: var(--night-2); }
 .machine-board .board { position: absolute; inset: 0; width: 100%; height: 100%; aspect-ratio: auto; border-radius: 0; }
 .machine-board .stage {
   position: absolute;
   left: 14%;
-  top: 20.909%;
+  top: 19.828%;
   width: 72%;
-  height: 51.364%;
+  height: 48.707%;
   aspect-ratio: auto;
   container-type: size;
   border-radius: 10px;
@@ -809,3 +810,5 @@ button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px s
 @media (min-width: 900px) { #app { grid-template-columns: minmax(0, 430px) minmax(0, 1fr); } }
 .art-head { font-size: 14px; margin: 18px 0 4px; color: var(--gold); }
 .asset-row .thumb span { font-size: 22px; color: var(--gold); }
+.ctl.rush-end { background: linear-gradient(var(--panel-2), var(--panel)); border-color: #ff9a1f; color: #ffb36b; }
+.btn-danger:disabled { opacity: 0.5; cursor: not-allowed; }

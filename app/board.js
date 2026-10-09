@@ -4,7 +4,7 @@
 (function (root) {
   // 液晶を中央に埋め込んだ縦長の盤面。玉は液晶の左右のすき間を流れ、液晶の下のステージ・ヘソ・電チュー・アタッカーへ向かう
   const W = 300;
-  const H = 440;
+  const H = 464;
   const CX = 150;
   const CY = 180;
   const R = 150;          // 盤面上部の円弧（外レール）
@@ -16,31 +16,39 @@
   // 液晶（ここに演出画面をはめ込む）
   const LCD = { x0: 42, x1: 258, y0: 92, y1: 318 };
   // 入賞口
-  const HESO = { x: 150, y: 394, w: 4.2 };
-  const DENCHU = { x: 256, y: 362, w: 6 };
-  const ATTACKER = { x0: 222, x1: 246, y: 402 };
-  const POCKETS = [{ x: 22, y: 418, w: 5, pay: 5 }, { x: 196, y: 414, w: 4, pay: 5 }];
+  const HESO = { x: 150, y: 418, w: 4.2 };
+  const DENCHU = { x: 256, y: 386, w: 6 };
+  const ATTACKER = { x0: 222, x1: 246, y: 426 };
+  const POCKETS = [{ x: 22, y: 442, w: 5, pay: 5 }, { x: 196, y: 438, w: 4, pay: 5 }];
   // 道釘（玉が転がる道）。途中のすき間から落ちた玉はアウト
   const RAMPS = [
     // 液晶の屋根（落ちてきた玉を左右に振り分ける）
     [40, 94, 150, 82], [150, 82, 260, 94],
     // 左ルートの下からヘソへ寄せる道
-    [6, 330, 60, 340], [69, 341.5, 104, 348], [112, 349.5, 136, 354],
+    [6, 354, 60, 364], [69, 365.5, 104, 372], [112, 373.5, 136, 378],
     // 右打ちルート：電チューへ寄せる道と、アタッカーへ流す道
-    [294, 340, 266, 354], [294, 380, 250, 390],
+    [294, 364, 266, 378], [294, 404, 250, 414],
   ];
   const RAIL_FRICTION = 0.55;
   // ワープ入口（液晶の左の縁）に入った玉は、液晶下のステージに出てくる
   const WARP = { x0: 36, x1: 41, y0: 200, y1: 204, outX: 50 };
-  // ステージ（中央が低い皿）。ワープから出た玉はステージを転がり、
-  // 中央の溝から落ちればヘソの真上へ、そうでなければ左右にこぼれる
-  const STAGE = [[44, 324, 150, 331], [150, 331, 256, 324]];
-  const STAGE_CENTER = 0.32;
-  const stageY = (x) => (x < 150 ? 324 + ((x - 44) / 106) * 7 : 331 - ((x - 150) / 106) * 7) - BALL - 1;
+  // 2段ステージ（どちらも中央が低い皿）。ワープから出た玉は上段を転がり、
+  // 中央から落ちれば下段へ。下段の中央の溝から落ちればヘソの真上、そうでなければ左右にこぼれる
+  const STAGE_UP = [[44, 324, 150, 331], [150, 331, 256, 324]];
+  const STAGE_LOW = [[72, 346, 150, 352], [150, 352, 228, 346]];
+  const STAGE = STAGE_UP.concat(STAGE_LOW);
+  const UP_CENTER = 0.45;   // 上段の中央から下段へ落ちる割合
+  const LOW_CENTER = 0.55;  // 下段の中央の溝からヘソへ向かう割合
+  const stageUpY = (x) => (x < 150 ? 324 + ((x - 44) / 106) * 7 : 331 - ((x - 150) / 106) * 7) - BALL - 1;
+  const stageLowY = (x) => (x < 150 ? 346 + ((x - 72) / 78) * 6 : 352 - ((x - 150) / 78) * 6) - BALL - 1;
   // 風車（当たった玉を回転方向にはじく）
   const WINDMILL = { x: 24, y: 214, r: 5, spin: 1 };
 
-  function buildPins(hesoOpen) {
+  const HESO_GAP = 1.5;
+  // ヘソ釘の開き → ヘソに来た玉が弾かれずに入る割合（開くほど入る）
+  const hesoAccept = (open) => Math.max(0, Math.min(1, open / 2.5));
+
+  function buildPins() {
     const pins = [];
     const inside = (x, y) => (y >= CY || Math.hypot(x - CX, y - CY) < R - 10) && x > 9 && x < W - 9;
     const outsideLcd = (x, y) => !(x > LCD.x0 - 5 && x < LCD.x1 + 5 && y > LCD.y0 - 8 && y < LCD.y1 + 5);
@@ -58,12 +66,12 @@
     // 液晶の上（天釘）
     for (let x = 60; x <= 240; x += 20) if (inside(x, 70)) pins.push([x, 70 + (x % 40 === 0 ? 0 : 4)]);
     // 液晶の下・右寄りの釘（ステージ中央から真下のヘソへの通り道はあけておく）
-    for (let row = 0, y = 346; y <= 368; row++, y += 11) {
+    for (let row = 0, y = 370; y <= 392; row++, y += 11) {
       for (let x = 164 + (row % 2) * 7; x <= 246; x += 14) pins.push([x, y]);
     }
-    // ヘソの命釘（hesoOpen で開け閉めする）
-    const g = 4 + hesoOpen;
-    pins.push([HESO.x - g, 386], [HESO.x + g, 386], [HESO.x + g + 6, 380]);
+    // ヘソの命釘
+    const g = 4 + HESO_GAP;
+    pins.push([HESO.x - g, 410], [HESO.x + g, 410], [HESO.x + g + 6, 404]);
     return pins;
   }
 
@@ -84,7 +92,9 @@
     }
     setHeso(open) {
       this.hesoOpen = open;
-      this.pins = buildPins(open);
+      this.accept = hesoAccept(open);
+      if (this.pins) return;
+      this.pins = buildPins();
       // 当たり判定を速くするための格子
       this.grid = new Map();
       for (const p of this.pins) {
@@ -175,16 +185,25 @@
         // ステージ上を転がっている玉（行き先は乗った時点で決まる）
         if (b.stage) {
           const st = b.stage;
+          const low = st.tier === 2;
+          const yOf = low ? stageLowY : stageUpY;
           st.t += dt;
           const k = Math.min(1, st.t / st.dur);
-          const wob = Math.sin(k * Math.PI * st.swings) * (1 - k) * 34;
+          const wob = Math.sin(k * Math.PI * st.swings) * (1 - k) * (low ? 24 : 34);
           const x = st.x0 + (st.x1 - st.x0) * (1 - Math.pow(1 - k, 2)) + wob;
-          b.x = Math.max(45, Math.min(255, x));
-          b.y = stageY(b.x);
+          b.x = low ? Math.max(73, Math.min(227, x)) : Math.max(45, Math.min(255, x));
+          // 下段に落ちた直後は上段から落ちてくる途中
+          b.y = low && st.t < 0.18 ? st.y0 + (yOf(b.x) - st.y0) * (st.t / 0.18) : yOf(b.x);
           if (k >= 1) {
-            b.stage = null;
-            if (st.out === "center") { b.x = 150 + (this.rng() - 0.5) * 7; b.y = 336; b.vx = 0; b.vy = 30; }
-            else { b.vx = st.out === "left" ? -50 : 50; b.vy = 0; b.y = stageY(b.x) - 1; b.x += st.out === "left" ? -3 : 3; }
+            if (!low && st.out === "center") {
+              const r = this.rng();
+              const out = r < LOW_CENTER ? "center" : r < (1 + LOW_CENTER) / 2 ? "left" : "right";
+              b.stage = { tier: 2, t: 0, dur: 0.8 + this.rng() * 0.6, x0: 150, x1: out === "center" ? 150 : out === "left" ? 71 : 229, swings: 1 + Math.floor(this.rng() * 2), out, y0: b.y };
+            } else {
+              b.stage = null;
+              if (st.out === "center") { b.x = 150 + (this.rng() - 0.5) * 7; b.y = 360; b.vx = 0; b.vy = 30; }
+              else { b.vx = st.out === "left" ? -45 : 45; b.vy = 0; b.y = yOf(b.x) - 1; b.x += st.out === "left" ? -3 : 3; }
+            }
           }
           keep.push(b);
           continue;
@@ -193,10 +212,10 @@
         if (b.vx > 0 && b.x > WARP.x0 && b.x < WARP.x1 && b.y > WARP.y0 && b.y < WARP.y1) {
           this.stats.warp = (this.stats.warp || 0) + 1;
           const r = this.rng();
-          const out = r < STAGE_CENTER ? "center" : r < (1 + STAGE_CENTER) / 2 ? "left" : "right";
-          b.stage = { t: 0, dur: 1 + this.rng() * 0.8, x0: WARP.outX, x1: out === "center" ? 150 : out === "left" ? 41 : 259, swings: 1 + Math.floor(this.rng() * 3), out };
+          const out = r < UP_CENTER ? "center" : r < (1 + UP_CENTER) / 2 ? "left" : "right";
+          b.stage = { tier: 1, t: 0, dur: 1 + this.rng() * 0.8, x0: WARP.outX, x1: out === "center" ? 150 : out === "left" ? 41 : 259, swings: 1 + Math.floor(this.rng() * 3), out };
           b.warped = true;
-          b.x = WARP.outX; b.y = stageY(WARP.outX);
+          b.x = WARP.outX; b.y = stageUpY(WARP.outX);
           keep.push(b);
           continue;
         }
@@ -252,7 +271,16 @@
         }
 
         // 入賞判定
-        if (Math.abs(b.x - HESO.x) < HESO.w && b.y > HESO.y - 2 && b.y < HESO.y + 4) {
+        if (!b.kicked && Math.abs(b.x - HESO.x) < HESO.w && b.y > HESO.y - 2 && b.y < HESO.y + 4) {
+          // ヘソ弾き：命釘に当たって外へ弾かれる
+          if (this.rng() > this.accept) {
+            b.kicked = true;
+            b.y = HESO.y - 5;
+            b.vy = -40 - this.rng() * 30;
+            b.vx = (this.rng() < 0.5 ? -1 : 1) * (50 + this.rng() * 40);
+            keep.push(b);
+            continue;
+          }
           this.stats.heso++;
           if (b.warped) this.stats.hesoStage = (this.stats.hesoStage || 0) + 1;
           this.handlers.onHeso && this.handlers.onHeso();
