@@ -782,8 +782,8 @@ button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px s
 /* 物理盤面 */
 .board-panel { position: relative; display: grid; gap: 6px; background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 8px; }
 .board { width: 100%; aspect-ratio: 300 / 240; display: block; border-radius: 10px; max-width: 100%; }
-.stroke { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 8px; align-items: center; }
-.stroke button { font-size: 13px; padding: 8px 10px; }
+.stroke { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.stroke button { font-size: 15px; font-weight: 700; padding: 12px 10px; }
 .stroke-range { display: grid; gap: 2px; font-size: 11px; color: var(--muted); }
 .stroke-range b { color: var(--ink); font-variant-numeric: tabular-nums; }
 .stroke-range input { width: 100%; accent-color: var(--gold); }

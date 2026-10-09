@@ -88,9 +88,9 @@
       opt("high", "落下（高音）", 1, 0.03, { sound: "high", rushOnly }),
     ]);
   const SENBARE = {
-    s40: senbareGroup(0.4, 0.45, false),
-    s90: senbareGroup(0.9, 0.45, false),
-    ex: senbareGroup(1, 0.2, true),
+    s40: senbareGroup(0.4, 0.62, false),
+    s90: senbareGroup(0.9, 0.62, false),
+    ex: senbareGroup(1, 0.3, true),
   };
   const URA_BUTTON_RATE = 0.5; // 先バレしたRUSH直行の当たりのうち、裏ボタンが成功する割合
 
@@ -152,8 +152,8 @@
     ]),
     group("sakura", "西行妖 開花予告", "spin", [
       opt("su3", "SU3で開花", 0.2, 0.05),
-      opt("su3drop", "SU3＋陰陽玉弱落下", 0.35, 0.04, { drop: true }),
-      opt("startDrop", "変動開始＋陰陽玉弱落下", 0.66, 0.04, { drop: true }),
+      opt("su3drop", "SU3＋陰陽玉弱落下", 0.35, 0.07, { drop: true }),
+      opt("startDrop", "変動開始＋陰陽玉弱落下", 0.66, 0.07, { drop: true }),
     ]),
     group("giji", "「異変は終わらない」連続予告", "spin", [
       opt("x2", "2回", 0.02, 0.06, { n: 2 }),
@@ -198,9 +198,9 @@
       opt("red", "赤", 0.8, 0.05, { color: "red" }),
     ]),
     group("hand", "陰陽玉落下（変動中）", "spin", [
-      opt("normal", "通常音", 0.72, 0.18, { sound: "normal" }),
-      opt("low", "低音", 1, 0.02, { sound: "low" }),
-      opt("high", "高音", 1, 0.02, { sound: "high" }),
+      opt("normal", "通常音", 0.72, 0.4, { sound: "normal" }),
+      opt("low", "低音", 1, 0.04, { sound: "low" }),
+      opt("high", "高音", 1, 0.04, { sound: "high" }),
     ]),
   ];
 
@@ -223,9 +223,9 @@
   // SPリーチ中
   const NORMAL_SP_YOKOKU = [
     group("spDrop", "SP発展時 陰陽玉落下", "sp", [
-      opt("normal", "通常タイミング", 0.76, 0.15),
-      opt("early", "少し早い", 0.64, 0.08),
-      opt("veryEarly", "かなり早い", 1, 0.02),
+      opt("normal", "通常タイミング", 0.76, 0.3),
+      opt("early", "少し早い", 0.64, 0.16),
+      opt("veryEarly", "かなり早い", 1, 0.04),
     ]),
     group("ihen", "「これは異変よ」予告", "sp", [opt("on", "発生", 0.75, 0.1, { color: "red" })]),
     group("sukimaSasoi", "スキマからの誘い", "sp", [opt("on", "発生", 0.6, 0.08, { color: "purple" })]),
@@ -252,7 +252,7 @@
     color3("title", "タイトル色", titleR),
     color3("telop", "テロップ色", telopR),
     group("lamp", "陰陽玉ランプ点灯", "self", [opt("on", "点灯", lampR, 0.35)]),
-    group("drop", "陰陽玉落下", "self", [opt("on", "落下", dropR, 0.25)]),
+    group("drop", "陰陽玉落下", "self", [opt("on", "落下", dropR, 0.45)]),
     group("strong", "強ルート分岐（桜役物）", "self", [opt("on", "分岐", strongR, 0.5)]),
     color3("cutin", "カットイン色", cutinR),
     deviceGroup(),
@@ -274,7 +274,7 @@
   ];
   const charaSubs = [
     group("telop", "テロップ色", "self", [opt("red", "赤", 0.28, 0.3, { color: "red" })]),
-    group("drop", "陰陽玉落下", "self", [opt("on", "落下", 0.71, 0.3)]),
+    group("drop", "陰陽玉落下", "self", [opt("on", "落下", 0.71, 0.45)]),
   ];
   const longSubs = (goldR) => [
     group("telop", "テロップ色", "self", [opt("gold", "金", goldR, 0.2, { color: "gold" })]),

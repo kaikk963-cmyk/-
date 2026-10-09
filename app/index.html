@@ -49,11 +49,9 @@
 
       <div class="board-panel" id="boardPanel">
         <canvas id="board" class="board" aria-label="盤面"></canvas>
-        <div class="stroke">
-          <button type="button" id="leftShot">左打ち</button>
-          <label class="stroke-range"><span>ハンドル <b id="strengthVal">40</b></span>
-            <input id="strength" type="range" min="0" max="100" step="1" value="40" aria-label="ハンドルの強さ"></label>
-          <button type="button" id="rightShot">右打ち</button>
+        <div class="stroke seg" role="group" aria-label="打ち方">
+          <button type="button" id="leftShot" aria-pressed="true">◀ 左打ち</button>
+          <button type="button" id="rightShot" aria-pressed="false">右打ち ▶</button>
         </div>
         <div class="shot-hint" id="shotHint" hidden></div>
       </div>

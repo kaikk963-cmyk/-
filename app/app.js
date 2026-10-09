@@ -8,7 +8,7 @@
   const fmt = (n) => Math.round(n).toLocaleString("ja-JP");
 
   const DEFAULT_CUSTOM = { senbare: "s40", sakiyomi: "osusume", leverBuru: "off", impact: "off", rushMode: "default", challenge: "koumakan" };
-  const DEFAULT_SETTINGS = { board: "on", strength: 40, hesoOpen: 2, rate: 18, speed: "normal", autoPush: "off", sound: "on", bgm: "off", volume: 0.7, vibe: "on", showRel: "on" };
+  const DEFAULT_SETTINGS = { board: "on", shot: "left", autoShot: "on", leftStrength: 40, rightStrength: 80, hesoOpen: 2, rate: 18, speed: "normal", autoPush: "off", sound: "on", bgm: "off", volume: 0.7, vibe: "on", showRel: "on" };
   const SPEEDS = { slow: 1.35, normal: 1, fast: 0.5, turbo: 0.2 };
   const SPEED_LABEL = { slow: "ゆっくり", normal: "標準", fast: "高速", turbo: "爆速" };
   const DEFAULT_DEV = { overrides: {}, force: "none", senbare: "off", rush6000: null, dropBtn: "off" };
@@ -150,7 +150,7 @@
         },
       },
     });
-    board.strength = state.settings.strength;
+    board.strength = state.settings.leftStrength;
     boardView = B.createBoardView($("board"), board);
     let last = performance.now();
     const frame = (t) => {
@@ -170,8 +170,10 @@
 
   let lastHint = "";
   function renderShotHint() {
-    const right = state.settings.strength >= 50;
     const needRight = inBonus || state.mode === "rush";
+    // 自動打ち分け：RUSH・BONUS中は右打ち、通常時は左打ちに切り替える
+    if (state.settings.autoShot === "on" && (state.settings.shot === "right") !== needRight) setShot(needRight ? "right" : "left");
+    const right = state.settings.shot === "right";
     const text = needRight && !right ? "右打ちしてください ▶" : !needRight && right && handleOn ? "◀ 通常時は左打ち" : "";
     if (text !== lastHint) {
       lastHint = text;
@@ -180,11 +182,12 @@
     }
   }
 
-  function setStrength(v) {
-    state.settings.strength = v;
-    board.strength = v;
-    $("strength").value = v;
-    $("strengthVal").textContent = v;
+  // 左打ち／右打ち。強さはそれぞれ開発者タブで調整できる
+  function setShot(shot) {
+    state.settings.shot = shot;
+    board.strength = shot === "right" ? state.settings.rightStrength : state.settings.leftStrength;
+    $("leftShot").setAttribute("aria-pressed", String(shot === "left"));
+    $("rightShot").setAttribute("aria-pressed", String(shot === "right"));
     save();
   }
 
@@ -556,6 +559,8 @@
         ${warn ? `<p class="warn">${warn}</p>` : ""}</details>`;
     }
     const big = state.dev.rush6000 ?? devDefaults.rush6000;
+    body += field("ハンドルの強さ（物理盤面）", "左打ち・右打ちを選んだときの打ち出しの強さ（0〜100）。左打ちは35〜45あたりがいちばん回る。",
+      `<div class="drop-btns" style="grid-template-columns:auto 1fr auto 1fr;align-items:center">左<input class="num-in" type="number" min="0" max="100" step="1" data-strength="leftStrength" value="${state.settings.leftStrength}" aria-label="左打ちの強さ">右<input class="num-in" type="number" min="0" max="100" step="1" data-strength="rightStrength" value="${state.settings.rightStrength}" aria-label="右打ちの強さ"></div>`);
     body += field("ヘソ釘の開き（物理盤面）", "大きいほどヘソに入りやすい。標準は2。", `<input id="hesoRange" class="range" type="range" min="1" max="4" step="0.25" value="${state.settings.hesoOpen}">`, `<b id="hesoVal">${state.settings.hesoOpen}</b>`);
     body += field("夢想封印MAX（6000発）の割合", "RUSH中の大当りのうち、BONUS中に陰陽玉が落ちて6000発になる割合。",
       `<input class="num-in wide" type="number" inputmode="decimal" min="0" max="100" step="0.5" data-dev="rush6000" value="${+(big * 100).toFixed(2)}" aria-label="6000発の割合（%）">`, `<b>${+(big * 100).toFixed(1)}%</b>`);
@@ -775,6 +780,7 @@
     let body = "";
     if (tab === "custom") {
       body = Object.entries(D.CUSTOMS).map(([k, v]) => field(v.name, v.desc, seg(`custom.${k}`, v.choices, c[k]))).join("");
+      body += field("左打ち・右打ちを自動で切り替え", "ONにすると、RUSH・BONUS中は右打ち、通常時は左打ちに自動で切り替わる。OFFなら盤面の下のボタンで自分で切り替える。", seg("settings.autoShot", { on: "ON", off: "OFF" }, st.autoShot));
       body += field("弾幕RUSH 演出モード", D.RUSH_MODES[c.rushMode].desc, seg("custom.rushMode", Object.fromEntries(Object.entries(D.RUSH_MODES).map(([k, v]) => [k, v.name])), c.rushMode));
       body += field("RUSH突入チャレンジ", D.CHALLENGES[c.challenge].desc, seg("custom.challenge", Object.fromEntries(Object.entries(D.CHALLENGES).map(([k, v]) => [k, v.name])), c.challenge));
     } else if (tab === "settings") {
@@ -930,6 +936,11 @@
     });
     $("menu").addEventListener("change", (e) => {
       if (e.target.matches("[data-dev]")) onDevInput(e.target);
+      else if (e.target.matches("[data-strength]")) {
+        state.settings[e.target.dataset.strength] = Math.max(0, Math.min(100, +e.target.value || 0));
+        setShot(state.settings.shot);
+        renderMenu();
+      }
       else if (e.target.matches("[data-asset]")) onArtFile(e.target);
     });
     $("menu").addEventListener("click", async (e) => {
@@ -955,9 +966,8 @@
     };
     placeBoard();
     wide.addEventListener ? wide.addEventListener("change", placeBoard) : wide.addListener(placeBoard);
-    $("strength").addEventListener("input", (e) => setStrength(+e.target.value));
-    $("leftShot").addEventListener("click", () => setStrength(40));
-    $("rightShot").addEventListener("click", () => setStrength(80));
+    $("leftShot").addEventListener("click", () => setShot("left"));
+    $("rightShot").addEventListener("click", () => setShot("right"));
     $("dropBtn").addEventListener("click", () => {
       window.Sound.unlock();
       stage.drop("normal");
@@ -1015,7 +1025,7 @@
     if (state.mode === "rush") window.Sound.setTheme("rush");
     setupBoard();
     bind();
-    setStrength(state.settings.strength);
+    setShot(state.settings.shot);
     applySettings();
     render();
     window.GensouAssets.init().then(() => stage.refreshArt());
