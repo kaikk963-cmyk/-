@@ -2,64 +2,68 @@
 // 左のレールから玉を打ち出し、釘に当たりながら落ちて、ヘソ（始動口）・電チュー・アタッカー・一般入賞口に入る。
 // 物理部分（Board）は DOM に依存しないので node でも動く。
 (function (root) {
+  // 液晶を中央に埋め込んだ縦長の盤面。玉は液晶の左右のすき間を流れ、液晶の下のステージ・ヘソ・電チュー・アタッカーへ向かう
   const W = 300;
-  const H = 240;
+  const H = 440;
   const CX = 150;
-  const CY = 150;
-  const R = 146;          // 盤面上部の円弧（外レール）
+  const CY = 180;
+  const R = 150;          // 盤面上部の円弧（外レール）
   const BALL = 3;
   const PIN = 1.4;
   const G = 420;          // 重力 px/s^2
   const SUB = 1 / 240;    // 物理の刻み
 
-  // 液晶（中央の障害物）
-  const LCD = { x0: 92, x1: 208, y0: 34, y1: 118 };
+  // 液晶（ここに演出画面をはめ込む）
+  const LCD = { x0: 42, x1: 258, y0: 92, y1: 318 };
   // 入賞口
-  const HESO = { x: 150, y: 197, w: 4.2 };
-  const DENCHU = { x: 254, y: 190, w: 6 };
-  const ATTACKER = { x0: 222, x1: 246, y: 222 };
-  const POCKETS = [{ x: 30, y: 214, w: 5, pay: 5 }, { x: 196, y: 214, w: 4, pay: 5 }];
+  const HESO = { x: 150, y: 394, w: 4.2 };
+  const DENCHU = { x: 256, y: 362, w: 6 };
+  const ATTACKER = { x0: 222, x1: 246, y: 402 };
+  const POCKETS = [{ x: 22, y: 418, w: 5, pay: 5 }, { x: 196, y: 414, w: 4, pay: 5 }];
   // 道釘（玉が転がる道）。途中のすき間から落ちた玉はアウト
   const RAMPS = [
     // 液晶の屋根（落ちてきた玉を左右に振り分ける）
-    [90, 36, 150, 25], [150, 25, 210, 36],
-    [12, 166, 34, 170], [50, 172, 70, 175.5], [86, 177.5, 104, 180], [118, 181.5, 130, 183.5],
+    [40, 94, 150, 82], [150, 82, 260, 94],
+    // 左ルートの下からヘソへ寄せる道
+    [6, 330, 60, 340], [69, 341.5, 104, 348], [112, 349.5, 136, 354],
     // 右打ちルート：電チューへ寄せる道と、アタッカーへ流す道
-    [292, 168, 263, 183], [292, 202, 247, 212],
+    [294, 340, 266, 354], [294, 380, 250, 390],
   ];
   const RAIL_FRICTION = 0.55;
-  // ワープ入口（液晶の左）に入った玉は、液晶下のステージに出てくる
-  const WARP = { x0: 81, x1: 85, y0: 75, y1: 78, outX: 104, outY: 118 };
+  // ワープ入口（液晶の左の縁）に入った玉は、液晶下のステージに出てくる
+  const WARP = { x0: 36, x1: 41, y0: 200, y1: 204, outX: 50 };
   // ステージ（中央が低い皿）。ワープから出た玉はステージを転がり、
   // 中央の溝から落ちればヘソの真上へ、そうでなければ左右にこぼれる
-  const STAGE = [[98, 122, 150, 129], [150, 129, 202, 122]];
+  const STAGE = [[44, 324, 150, 331], [150, 331, 256, 324]];
   const STAGE_CENTER = 0.32;
-  const stageY = (x) => (x < 150 ? 122 + ((x - 98) / 52) * 7 : 129 - ((x - 150) / 52) * 7) - BALL - 1;
+  const stageY = (x) => (x < 150 ? 324 + ((x - 44) / 106) * 7 : 331 - ((x - 150) / 106) * 7) - BALL - 1;
   // 風車（当たった玉を回転方向にはじく）
-  const WINDMILL = { x: 58, y: 126, r: 5, spin: 1 };
+  const WINDMILL = { x: 24, y: 214, r: 5, spin: 1 };
 
   function buildPins(hesoOpen) {
     const pins = [];
-    const inside = (x, y) => (y >= CY || Math.hypot(x - CX, y - CY) < R - 12) && x > 10 && x < W - 10;
-    const outsideLcd = (x, y) => !(x > LCD.x0 - 5 && x < LCD.x1 + 5 && y > LCD.y0 - 5 && y < LCD.y1 + 5);
-    // 左の釘（ここを抜けた玉が道釘に乗る）
-    for (let row = 0, y = 44; y <= 156; row++, y += 11) {
-      for (let x = 16 + (row % 2) * 7; x <= 84; x += 14) {
-        if (Math.hypot(x - WINDMILL.x, y - WINDMILL.y) < 12) continue;
+    const inside = (x, y) => (y >= CY || Math.hypot(x - CX, y - CY) < R - 10) && x > 9 && x < W - 9;
+    const outsideLcd = (x, y) => !(x > LCD.x0 - 5 && x < LCD.x1 + 5 && y > LCD.y0 - 8 && y < LCD.y1 + 5);
+    // 左ルート（液晶の左のすき間）
+    for (let row = 0, y = 110; y <= 316; row++, y += 11) {
+      for (let x = 12 + (row % 2) * 7; x <= 34; x += 14) {
+        if (Math.hypot(x - WINDMILL.x, y - WINDMILL.y) < 11) continue;
         if (inside(x, y) && outsideLcd(x, y)) pins.push([x, y]);
       }
     }
-    // 右（右打ちルート）の釘は少なめ
-    for (let row = 0, y = 44; y <= 156; row++, y += 16) {
-      for (let x = 218 + (row % 2) * 9; x <= 288; x += 18) if (inside(x, y) && outsideLcd(x, y)) pins.push([x, y]);
+    // 右ルート（右打ち）
+    for (let row = 0, y = 110; y <= 316; row++, y += 13) {
+      for (let x = 266 + (row % 2) * 8; x <= 292; x += 16) if (inside(x, y) && outsideLcd(x, y)) pins.push([x, y]);
     }
-    // 液晶の下の釘（ステージから真下のヘソへの通り道はあけておく）
-    for (let row = 0, y = 142; y <= 164; row++, y += 11) {
-      for (let x = 100 + (row % 2) * 7; x <= 200; x += 14) if (Math.abs(x - HESO.x) > 10) pins.push([x, y]);
+    // 液晶の上（天釘）
+    for (let x = 60; x <= 240; x += 20) if (inside(x, 70)) pins.push([x, 70 + (x % 40 === 0 ? 0 : 4)]);
+    // 液晶の下・右寄りの釘（ステージ中央から真下のヘソへの通り道はあけておく）
+    for (let row = 0, y = 346; y <= 368; row++, y += 11) {
+      for (let x = 164 + (row % 2) * 7; x <= 246; x += 14) pins.push([x, y]);
     }
     // ヘソの命釘（hesoOpen で開け閉めする）
     const g = 4 + hesoOpen;
-    pins.push([HESO.x - g, 189], [HESO.x + g, 189], [HESO.x + g + 6, 183]);
+    pins.push([HESO.x - g, 386], [HESO.x + g, 386], [HESO.x + g + 6, 380]);
     return pins;
   }
 
@@ -102,8 +106,8 @@
       if (this.handlers.onFire && this.handlers.onFire() === false) return;
       this.stats.fired++;
       // ハンドルの強さで打ち出しの速さが決まる（ばらつきあり）
-      const v = 250 + this.strength * 3.3 + (this.rng() - 0.5) * 18;
-      this.balls.push({ x: CX - R + BALL + 1, y: CY + 30, vx: 0, vy: -v, life: 0 });
+      const v = 230 + this.strength * 3.4 + (this.rng() - 0.5) * 18;
+      this.balls.push({ x: CX - R + BALL + 1, y: CY + 30, vx: 0, vy: -v, life: 0, up: false });
     }
     step(dt) {
       // 打ち出し
@@ -117,7 +121,7 @@
       // 電チューは RUSH 中に開閉をくり返す
       if (this.mode === "rush") {
         this.denchuT += dt;
-        this.denchuOpen = this.denchuT % 1.1 < 0.8;
+        this.denchuOpen = this.denchuT % 1 < 0.9;
       } else {
         this.denchuOpen = false;
       }
@@ -154,8 +158,9 @@
         // 左右の壁
         if (b.x < 4 + BALL) { b.x = 4 + BALL; b.vx = Math.abs(b.vx) * 0.4; }
         if (b.x > W - 4 - BALL) { b.x = W - 4 - BALL; b.vx = -Math.abs(b.vx) * 0.4; }
-        // 打ち出し直後、レールに乗る前に失速した玉は戻り玉（ファウル）
-        if (b.life > 0.25 && b.x < 14 && b.y > CY + 20 && b.vy > 0) { this.stats.out++; continue; }
+        // 打ち出したあと盤面まで届かずに落ちてきた玉は戻り玉（ファウル）
+        if (b.y < CY - 40) b.up = true;
+        if (!b.up && b.life > 0.2 && b.vy > 0 && b.y > CY + 20) { this.stats.out++; continue; }
 
         // 液晶の枠
         if (b.x > LCD.x0 - BALL && b.x < LCD.x1 + BALL && b.y > LCD.y0 - BALL && b.y < LCD.y1 + BALL) {
@@ -174,11 +179,11 @@
           const k = Math.min(1, st.t / st.dur);
           const wob = Math.sin(k * Math.PI * st.swings) * (1 - k) * 34;
           const x = st.x0 + (st.x1 - st.x0) * (1 - Math.pow(1 - k, 2)) + wob;
-          b.x = Math.max(99, Math.min(201, x));
+          b.x = Math.max(45, Math.min(255, x));
           b.y = stageY(b.x);
           if (k >= 1) {
             b.stage = null;
-            if (st.out === "center") { b.x = 150 + (this.rng() - 0.5) * 7; b.y = 134; b.vx = 0; b.vy = 30; }
+            if (st.out === "center") { b.x = 150 + (this.rng() - 0.5) * 7; b.y = 336; b.vx = 0; b.vy = 30; }
             else { b.vx = st.out === "left" ? -50 : 50; b.vy = 0; b.y = stageY(b.x) - 1; b.x += st.out === "left" ? -3 : 3; }
           }
           keep.push(b);
@@ -189,7 +194,7 @@
           this.stats.warp = (this.stats.warp || 0) + 1;
           const r = this.rng();
           const out = r < STAGE_CENTER ? "center" : r < (1 + STAGE_CENTER) / 2 ? "left" : "right";
-          b.stage = { t: 0, dur: 1 + this.rng() * 0.8, x0: WARP.outX, x1: out === "center" ? 150 : out === "left" ? 97 : 203, swings: 1 + Math.floor(this.rng() * 3), out };
+          b.stage = { t: 0, dur: 1 + this.rng() * 0.8, x0: WARP.outX, x1: out === "center" ? 150 : out === "left" ? 41 : 259, swings: 1 + Math.floor(this.rng() * 3), out };
           b.warped = true;
           b.x = WARP.outX; b.y = stageY(WARP.outX);
           keep.push(b);
@@ -322,10 +327,7 @@
       g.roundRect ? g.roundRect(LCD.x0, LCD.y0, LCD.x1 - LCD.x0, LCD.y1 - LCD.y0, 8) : g.rect(LCD.x0, LCD.y0, LCD.x1 - LCD.x0, LCD.y1 - LCD.y0);
       g.fill();
       g.stroke();
-      g.fillStyle = "#a99fcb";
-      g.font = "10px sans-serif";
       g.textAlign = "center";
-      g.fillText("液晶", CX, (LCD.y0 + LCD.y1) / 2 + 3);
       // 釘
       g.fillStyle = "#d8d2ea";
       for (const p of board.pins) {
@@ -394,7 +396,7 @@
     return { draw, resize };
   }
 
-  const api = { Board, createBoardView, W, H };
+  const api = { Board, createBoardView, W, H, LCD };
   if (typeof module !== "undefined") module.exports = api;
   else root.GensouBoard = api;
 })(this);

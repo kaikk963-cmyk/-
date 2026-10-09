@@ -406,12 +406,12 @@
     }
     const tone = (color) => `tone-${color || "white"}`;
 
-    function dropYinyang(kind = "normal", { weak = false, early = false } = {}) {
+    function dropYinyang(kind = "normal", { weak = false, early = false, sound = null } = {}) {
       yinyang.classList.remove("drop", "drop-weak", "drop-early");
       void yinyang.offsetWidth;
       yinyang.classList.add(weak ? "drop-weak" : "drop");
       if (early) yinyang.classList.add("drop-early");
-      sfx(weak ? "weakDrop" : "drop", kind);
+      sfx(sound || (weak ? "weakDrop" : "drop"), kind);
       if (!weak) {
         setTimeout(quake, 280 * speed);
         handlers.onVibrate && handlers.onVibrate(kind === "normal" ? [60, 40, 60] : [200, 60, 200]);
@@ -534,7 +534,7 @@
         setTimeout(() => n.remove(), 1200);
       }
       if (hold.senbare) {
-        dropYinyang(hold.senbare.sound);
+        dropYinyang(hold.senbare.sound, { sound: "senbare" });
         flash();
         handlers.onLog && handlers.onLog(hold.senbare.info);
         // 落下後しばらくPUSHで裏ボタン
@@ -640,7 +640,7 @@
           reels.special(1, "next");
           sfx("card", i === st.n - 1 ? "red" : "white");
           const chip = add(h("div", "notice tone-purple", `<div>×${i + 1}</div>`));
-          chip.style.fontSize = "40px";
+          chip.style.fontSize = "14cqw";
           if (st.reimu && i === 1) {
             flash("red");
             const r = add(h("div", "card tone-red", `${crest("reimu")}<div class="t">連続予告</div><div class="m">霊夢 出現</div>`));
@@ -758,7 +758,7 @@
           reels.spin(1, true);
           sfx("reach");
           const n = add(h("div", "notice tone-red", "リーチ"));
-          n.style.fontSize = "38px";
+          n.style.fontSize = "13cqw";
           await wait(750);
           n.remove();
           fx.setMode("reach", D.CHARS[D.DIGIT_CHARS[st.digits[0]]].color);

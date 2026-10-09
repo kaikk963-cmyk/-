@@ -12,6 +12,40 @@
   let bgmStep = 0;
   let bgmNext = 0;
 
+  // 取り込んだ音（名前ごと）。AudioContext ができてからデコードする
+  const custom = {};
+
+  async function decodeCustom(name) {
+    const c = custom[name];
+    if (!c || c.buffer || !ctx) return;
+    try {
+      const data = await c.blob.arrayBuffer();
+      const buf = await ctx.decodeAudioData(data);
+      // 音量をほかの効果音にそろえる（RMSで正規化）
+      let sum = 0, n = 0;
+      for (let ch = 0; ch < buf.numberOfChannels; ch++) {
+        const d = buf.getChannelData(ch);
+        for (let i = 0; i < d.length; i += 4) { sum += d[i] * d[i]; n++; }
+      }
+      const rms = Math.sqrt(sum / Math.max(1, n)) || 0.1;
+      if (custom[name] === c) { c.buffer = buf; c.gain = Math.min(1, 0.16 / rms); }
+    } catch {
+      delete custom[name];
+    }
+  }
+
+  function playCustom(name) {
+    const c = custom[name];
+    if (!c || !c.buffer) return false;
+    const src = ctx.createBufferSource();
+    const g = ctx.createGain();
+    src.buffer = c.buffer;
+    g.gain.value = c.gain;
+    src.connect(g).connect(master);
+    src.start();
+    return true;
+  }
+
   function unlock() {
     try {
       if (!ctx) {
@@ -27,6 +61,7 @@
       }
       if (ctx.state === "suspended") ctx.resume();
       if (bgmOn) startBgm();
+      Object.keys(custom).forEach(decodeCustom);
     } catch {}
   }
 
@@ -85,6 +120,8 @@
       notes([f, f * 1.5, f * 2], { type: "triangle", vol: 0.16, step: 0.05, len: 0.18 });
       if (color === "gold" || color === "rainbow") notes([f * 2, f * 2.5, f * 3], { type: "sine", vol: 0.12, step: 0.06, len: 0.3 });
     },
+    // 先バレ（保留入賞時の陰陽玉落下）。音を取り込んでいなければ落下音と同じ
+    senbare(kind = "normal") { sfx.drop(kind); },
     // 陰陽玉落下。通常音／低音／高音
     drop(kind = "normal") {
       if (kind === "low") {
@@ -141,7 +178,10 @@
 
   function play(name, arg) {
     if (!ready() || !sfx[name]) return;
-    try { sfx[name](arg); } catch {}
+    try {
+      if (playCustom(name)) return;
+      sfx[name](arg);
+    } catch {}
   }
 
   // ---- BGM（オリジナルの短いループ。都節音階） ----
@@ -192,6 +232,18 @@
     setEnabled(v) { enabled = v; if (!v) stopBgm(); else if (bgmOn) startBgm(); },
     setVolume(v) { volume = v; if (master) master.gain.value = v; },
     setBgm(v) { bgmOn = v; if (v && enabled) startBgm(); else stopBgm(); },
+    setCustom(name, blob) {
+      if (blob) { custom[name] = { blob }; decodeCustom(name); }
+      else delete custom[name];
+    },
+    // 試し聴き（設定がOFFでも鳴らす）
+    preview(name, arg) {
+      unlock();
+      if (!ctx) return;
+      const run = () => { try { if (!playCustom(name)) sfx[name](arg); } catch {} };
+      if (custom[name] && !custom[name].buffer) decodeCustom(name).then(run);
+      else run();
+    },
     setTheme(name) { if (bgmTheme !== name) { bgmTheme = name; bgmStep = 0; } },
   };
 })(this);

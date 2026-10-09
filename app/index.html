@@ -24,7 +24,11 @@
       </header>
 
       <div class="cabinet">
-        <div id="stage" class="stage" aria-label="液晶"></div>
+        <div class="machine-board">
+          <canvas id="board" class="board" aria-label="盤面"></canvas>
+          <div id="stage" class="stage" aria-label="液晶"></div>
+          <div class="shot-hint" id="shotHint" hidden></div>
+        </div>
       </div>
 
       <div class="controls">
@@ -47,13 +51,9 @@
         </button>
       </div>
 
-      <div class="board-panel" id="boardPanel">
-        <canvas id="board" class="board" aria-label="盤面"></canvas>
-        <div class="stroke seg" role="group" aria-label="打ち方">
-          <button type="button" id="leftShot" aria-pressed="true">◀ 左打ち</button>
-          <button type="button" id="rightShot" aria-pressed="false">右打ち ▶</button>
-        </div>
-        <div class="shot-hint" id="shotHint" hidden></div>
+      <div class="stroke seg" id="shotSeg" role="group" aria-label="打ち方">
+        <button type="button" id="leftShot" aria-pressed="true">◀ 左打ち</button>
+        <button type="button" id="rightShot" aria-pressed="false">右打ち ▶</button>
       </div>
     </div>
 

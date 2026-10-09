@@ -8,7 +8,7 @@
   const fmt = (n) => Math.round(n).toLocaleString("ja-JP");
 
   const DEFAULT_CUSTOM = { senbare: "s40", sakiyomi: "osusume", leverBuru: "off", impact: "off", rushMode: "default", challenge: "koumakan" };
-  const DEFAULT_SETTINGS = { board: "on", shot: "left", autoShot: "on", leftStrength: 40, rightStrength: 80, hesoOpen: 2, rate: 18, speed: "normal", autoPush: "off", sound: "on", bgm: "off", volume: 0.7, vibe: "on", showRel: "on" };
+  const DEFAULT_SETTINGS = { boardV: 3, board: "on", shot: "left", autoShot: "on", leftStrength: 20, rightStrength: 90, hesoOpen: 1.5, rate: 18, speed: "normal", autoPush: "off", sound: "on", bgm: "off", volume: 0.7, vibe: "on", showRel: "on" };
   const SPEEDS = { slow: 1.35, normal: 1, fast: 0.5, turbo: 0.2 };
   const SPEED_LABEL = { slow: "ゆっくり", normal: "標準", fast: "高速", turbo: "爆速" };
   const DEFAULT_DEV = { overrides: {}, force: "none", senbare: "off", rush6000: null, dropBtn: "off" };
@@ -36,6 +36,10 @@
       if (!s || s.v !== 1) return null;
       s.custom = { ...DEFAULT_CUSTOM, ...s.custom };
       s.settings = { ...DEFAULT_SETTINGS, ...s.settings };
+      // 盤面を液晶埋め込み型に作り直したので、打ち出しの強さと命釘は新しい初期値に戻す
+      if (s.settings.boardV !== DEFAULT_SETTINGS.boardV) {
+        for (const k of ["boardV", "leftStrength", "rightStrength", "hesoOpen"]) s.settings[k] = DEFAULT_SETTINGS[k];
+      }
       s.dev = { ...DEFAULT_DEV, ...s.dev };
       s.fired = s.fired || 0;
       s.returns = s.returns || 0;
@@ -156,13 +160,12 @@
     const frame = (t) => {
       const dt = Math.min(0.05, (t - last) / 1000);
       last = t;
-      if (useBoard()) {
-        board.firing = handleOn && !state.completed;
-        board.mode = inBonus ? "bonus" : state.mode;
-        board.step(dt / speedFactor());
-        boardView.draw();
-        renderShotHint();
-      }
+      // 盤面は常に描く（物理演算OFFのときは玉を打たない）
+      board.firing = useBoard() && handleOn && !state.completed;
+      board.mode = inBonus ? "bonus" : state.mode;
+      board.step(dt / speedFactor());
+      boardView.draw();
+      if (useBoard()) renderShotHint();
       requestAnimationFrame(frame);
     };
     requestAnimationFrame(frame);
@@ -559,9 +562,9 @@
         ${warn ? `<p class="warn">${warn}</p>` : ""}</details>`;
     }
     const big = state.dev.rush6000 ?? devDefaults.rush6000;
-    body += field("ハンドルの強さ（物理盤面）", "左打ち・右打ちを選んだときの打ち出しの強さ（0〜100）。左打ちは35〜45あたりがいちばん回る。",
+    body += field("ハンドルの強さ（物理盤面）", "左打ち・右打ちを選んだときの打ち出しの強さ（0〜100）。左打ちは15〜20あたりがよく回る。",
       `<div class="drop-btns" style="grid-template-columns:auto 1fr auto 1fr;align-items:center">左<input class="num-in" type="number" min="0" max="100" step="1" data-strength="leftStrength" value="${state.settings.leftStrength}" aria-label="左打ちの強さ">右<input class="num-in" type="number" min="0" max="100" step="1" data-strength="rightStrength" value="${state.settings.rightStrength}" aria-label="右打ちの強さ"></div>`);
-    body += field("ヘソ釘の開き（物理盤面）", "大きいほどヘソに入りやすい。標準は2。", `<input id="hesoRange" class="range" type="range" min="1" max="4" step="0.25" value="${state.settings.hesoOpen}">`, `<b id="hesoVal">${state.settings.hesoOpen}</b>`);
+    body += field("ヘソ釘の開き（物理盤面）", "大きいほどヘソに入りやすい。標準は1.5。", `<input id="hesoRange" class="range" type="range" min="1" max="4" step="0.25" value="${state.settings.hesoOpen}">`, `<b id="hesoVal">${state.settings.hesoOpen}</b>`);
     body += field("夢想封印MAX（6000発）の割合", "RUSH中の大当りのうち、BONUS中に陰陽玉が落ちて6000発になる割合。",
       `<input class="num-in wide" type="number" inputmode="decimal" min="0" max="100" step="0.5" data-dev="rush6000" value="${+(big * 100).toFixed(2)}" aria-label="6000発の割合（%）">`, `<b>${+(big * 100).toFixed(1)}%</b>`);
     body += `<div class="field"><button type="button" class="btn-danger" id="devReset">すべて元の値に戻す</button></div>`;
@@ -579,6 +582,17 @@
     return slots;
   }
 
+  const SOUND_SLOTS = [
+    { name: "senbare", label: "先バレ（陰陽玉落下）の音", sub: "保留入賞時に陰陽玉が落ちたとき" },
+    { name: "drop", label: "陰陽玉落下の音", sub: "変動中・リーチ中・復活で落ちたとき" },
+    { name: "kyuin", label: "大当りの音", sub: "図柄がそろったとき" },
+    { name: "rushIn", label: "RUSH突入の音", sub: "弾幕RUSH突入・継続" },
+  ];
+
+  function loadCustomSounds() {
+    for (const sl of SOUND_SLOTS) window.Sound.setCustom(sl.name, window.GensouAssets.blob(`sound:${sl.name}`));
+  }
+
   function renderArt() {
     const A = window.GensouAssets;
     let body = `<p class="note">キャラの立ち絵や背景を、この端末の画像から取り込めます。取り込んだ画像はこのブラウザの中だけに保存され、ほかの人には見えません。<br><b>フリー素材でも、使う前に各素材の利用規約を確認してください。</b>クレジット表記が必要なもの、再配布が禁止のもの、ギャンブル・パチンコ系での使用を禁止しているものがあります。立ち絵は背景が透過したPNGがきれいに出ます。</p>`;
@@ -591,6 +605,16 @@
         <div class="acts"><label class="btn">${u ? "変更" : "画像を選ぶ"}<input type="file" accept="image/*" data-asset="${sl.key}" aria-label="${sl.name}の画像"></label>
         ${u ? `<button type="button" data-asset-del="${sl.key}" aria-label="${sl.name}の画像を削除">削除</button>` : ""}</div></div>`;
     }).join("");
+    body += `<h3 class="art-head">効果音</h3><p class="note">音声ファイル（mp3など）を取り込むと、その場面の効果音が差し替わります。音量は自動でほかの効果音にそろえます。</p>`;
+    body += SOUND_SLOTS.map((sl) => {
+      const key = `sound:${sl.name}`;
+      const has = !!A.blob(key);
+      return `<div class="asset-row"><div class="thumb"><span aria-hidden="true">${has ? "♪" : "—"}</span></div>
+        <div class="name">${sl.label}<small>${has ? "取り込んだ音" : "標準の音"}・${sl.sub}</small></div>
+        <div class="acts"><button type="button" data-preview="${sl.name}" aria-label="${sl.label}を試し聴き">▶</button>
+        <label class="btn">${has ? "変更" : "音を選ぶ"}<input type="file" accept="audio/*" data-asset="${key}" aria-label="${sl.label}のファイル"></label>
+        ${has ? `<button type="button" data-asset-del="${key}" aria-label="${sl.label}を標準に戻す">戻す</button>` : ""}</div></div>`;
+    }).join("");
     return body;
   }
 
@@ -598,6 +622,7 @@
     const file = el.files && el.files[0];
     if (!file) return;
     await window.GensouAssets.put(el.dataset.asset, file);
+    loadCustomSounds();
     stage.refreshArt();
     renderMenu();
   }
@@ -874,7 +899,7 @@
     window.Sound.setBgm(st.bgm === "on");
     renderLog();
     renderStatus();
-    $("boardPanel").hidden = !useBoard();
+    $("shotSeg").hidden = !useBoard();
     const showDrop = state.dev.dropBtn === "on";
     $("dropBtn").hidden = !showDrop;
     document.querySelector(".controls").classList.toggle("has-drop", showDrop);
@@ -944,6 +969,8 @@
       else if (e.target.matches("[data-asset]")) onArtFile(e.target);
     });
     $("menu").addEventListener("click", async (e) => {
+      const pv = e.target.closest("[data-preview]");
+      if (pv) window.Sound.preview(pv.dataset.preview, "normal");
       const drop = e.target.closest("[data-drop]");
       if (drop) {
         window.Sound.unlock();
@@ -953,19 +980,11 @@
       const del = e.target.closest("[data-asset-del]");
       if (del) {
         await window.GensouAssets.remove(del.dataset.assetDel);
+        loadCustomSounds();
         stage.refreshArt();
         renderMenu();
       }
     });
-    // PCの横長画面では盤面を右の列に置き、台の列（液晶とボタン）が画面に収まるようにする
-    const wide = window.matchMedia("(min-width: 900px)");
-    const placeBoard = () => {
-      const panel = $("boardPanel");
-      if (wide.matches) document.querySelector(".side").prepend(panel);
-      else document.querySelector(".machine").append(panel);
-    };
-    placeBoard();
-    wide.addEventListener ? wide.addEventListener("change", placeBoard) : wide.addListener(placeBoard);
     $("leftShot").addEventListener("click", () => setShot("left"));
     $("rightShot").addEventListener("click", () => setShot("right"));
     $("dropBtn").addEventListener("click", () => {
@@ -1028,7 +1047,10 @@
     setShot(state.settings.shot);
     applySettings();
     render();
-    window.GensouAssets.init().then(() => stage.refreshArt());
+    window.GensouAssets.init().then(() => {
+      stage.refreshArt();
+      loadCustomSounds();
+    });
     if (state.completed) showComplete();
     else if (!started) stage.overlay(`<div class="t">e東方幻想弾幕録</div><div class="m">打ち出しで開始</div>`, "card tone-gold start-hint").style.cssText = "left:10%;right:10%;top:62%;z-index:7;pointer-events:none";
     requestAnimationFrame(() => renderGraph());

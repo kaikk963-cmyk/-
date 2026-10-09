@@ -6,6 +6,7 @@
   const MAX_SIDE = 1100;
   let db = null;
   const urls = {};
+  const blobs = {};
 
   function open() {
     return new Promise((resolve, reject) => {
@@ -35,6 +36,7 @@
           const c = req.result;
           if (!c) return resolve();
           urls[c.key] = URL.createObjectURL(c.value);
+          blobs[c.key] = c.value;
           c.continue();
         };
         req.onerror = () => resolve();
@@ -46,6 +48,7 @@
 
   // 大きな画像は長辺 MAX_SIDE に縮めて PNG で保存する（透過を残すため）
   async function shrink(file) {
+    if (!file.type.startsWith("image/")) return file; // 音声などはそのまま
     try {
       const bmp = await createImageBitmap(file);
       const scale = Math.min(1, MAX_SIDE / Math.max(bmp.width, bmp.height));
@@ -67,6 +70,7 @@
     }
     if (urls[key]) URL.revokeObjectURL(urls[key]);
     urls[key] = URL.createObjectURL(blob);
+    blobs[key] = blob;
   }
 
   async function remove(key) {
@@ -75,6 +79,7 @@
     }
     if (urls[key]) URL.revokeObjectURL(urls[key]);
     delete urls[key];
+    delete blobs[key];
   }
 
   root.GensouAssets = {
@@ -82,6 +87,8 @@
     put,
     remove,
     url: (key) => urls[key] || null,
+    blob: (key) => blobs[key] || null,
+    keys: () => Object.keys(blobs),
     persistent: () => !!db,
   };
 })(this);
