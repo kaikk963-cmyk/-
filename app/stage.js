@@ -1370,8 +1370,22 @@
       return n;
     }
 
+    // 先バレ演出中の表示（n: 当該変動まであと何回。0なら当該変動中、-1で消す）
+    let banner = null;
+    function senbareBanner(n) {
+      yinyang.classList.toggle("armed", n >= 0);
+      if (n < 0) {
+        if (banner) { banner.remove(); banner = null; }
+        stage.classList.remove("senbare-on");
+        return;
+      }
+      stage.classList.add("senbare-on");
+      if (!banner) { banner = h("div", "senbare-banner"); stage.append(banner); }
+      banner.innerHTML = n === 0 ? "<b>先バレ</b> 当該変動" : `<b>先バレ</b> あと${n}変動`;
+    }
+
     return {
-      play, setMode, setStatus, renderHolds, entry, input, overlay, clearSpin,
+      play, setMode, setStatus, renderHolds, entry, input, overlay, clearSpin, senbareBanner,
       // 立ち絵・背景の差し替えを反映する
       refreshArt() {
         reels.refresh();

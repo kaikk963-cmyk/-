@@ -144,6 +144,7 @@
     if (state.holds.length >= S.holdMax) return; // オーバー入賞（保留が満タン）
     const hold = engine.makeHold("normal", state.custom, takeForce("normal"));
     hold.shown = hold.reveal === "entry" ? hold.color : null;
+    if (hold.senbare) hold.shown = "yin"; // 先バレした保留は陰陽玉の保留になる
     state.holds.push(hold);
     entryArrived();
     // RUSH中のヘソ入賞は表に出さずに貯めておく（RUSH終了後に消化）
@@ -343,7 +344,10 @@
     state.sinceBonus++;
     renderHolds();
     renderCounters();
-    const sc = engine.normalScenario(hold, state.custom);
+    // 先バレした保留が後ろに控えている間は、実機の先バレ専用ムービーと同じく予告なしですぐ止める
+    const waiting = !hold.senbare && hold.result.kind === "miss" && state.holds.some((h) => h.senbare);
+    const sc = waiting ? engine.quietScenario(hold) : engine.normalScenario(hold, state.custom);
+    if (hold.senbare) sc.steps.unshift({ t: "card", id: "touga", title: "先バレ", text: "当該変動", color: "gold" });
     await stage.play(sc.steps, { short: state.holds.length >= 3, real: state.settings.speed === "real", holds: state.holds.length });
     current = null;
     if (hold.result.kind === "hit") await bonusNormal(hold, sc.digits);
@@ -581,6 +585,9 @@
   function renderHolds() {
     const list = state.mode === "rush" ? state.rushHolds : state.holds;
     stage.renderHolds(current, list);
+    // 先バレ演出中：先バレした保留の変動（当該変動）まであと何回か
+    const k = state.mode === "normal" ? state.holds.findIndex((h) => h.senbare) : -1;
+    stage.senbareBanner(k >= 0 ? k + 1 : current && current.senbare && state.mode === "normal" ? 0 : -1);
   }
 
   function renderStatus() {

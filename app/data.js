@@ -104,7 +104,7 @@
     senbare: {
       name: "先陰陽玉落下（先バレ）",
       choices: { off: "OFF", s40: "40%", s90: "90%", ex: "EX" },
-      desc: "保留入賞時に陰陽玉役物が落下。EXは落下すれば大当り＋RUSH濃厚（100%）。落下後にPUSHで裏ボタン。",
+      desc: "保留入賞時に陰陽玉役物が落下。40%・90%は落下時の信頼度、EXは落下すれば大当り＋RUSH濃厚。落下した保留は陰陽玉の保留になり、その変動（当該変動）まで先バレ演出が続く。ONにすると入賞時の先読みは出ない。落下後にPUSHで裏ボタン。",
     },
     sakiyomi: {
       name: "先読み",
@@ -130,10 +130,12 @@
       opt("low", "落下（低音）", 1, 0.03, { sound: "low", rushOnly }),
       opt("high", "落下（高音）", 1, 0.03, { sound: "high", rushOnly }),
     ]);
+  // 実機（e東京喰種の先役モノ落下）に合わせた占有率：40%・90%は大当りの約9割が先バレから、
+  // EXは「中程度」＝RUSH直行の大当りのほとんど（全大当りの約45%）。発生率は40%で約1/180、90%で約1/400。
   const SENBARE = {
-    s40: senbareGroup(0.4, 0.62, false),
-    s90: senbareGroup(0.9, 0.62, false),
-    ex: senbareGroup(1, 0.3, true),
+    s40: senbareGroup(0.4, 0.86, false),
+    s90: senbareGroup(0.9, 0.84, false),
+    ex: senbareGroup(1, 0.39, true),
   };
   const URA_BUTTON_RATE = 0.5; // 先バレしたRUSH直行の当たりのうち、裏ボタンが成功する割合
 

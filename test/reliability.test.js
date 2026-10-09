@@ -77,6 +77,7 @@ const r1 = runNormal(N, base, c);
 console.log(`通常時 ${N}回転: 図柄揃い 1/${(N / r1.hits).toFixed(1)}  チャージ 1/${(N / r1.charges).toFixed(1)}  合算 1/${(N / (r1.hits + r1.charges)).toFixed(1)}  図柄揃いのRUSH直行 ${(r1.rushHits / r1.hits * 100).toFixed(1)}%`);
 runNormal(N / 2, { ...base, senbare: "s90", leverBuru: "on", impact: "on" }, c);
 runNormal(N / 2, { ...base, senbare: "ex" }, c);
+runNormal(N / 2, { ...base, senbare: "off" }, c); // 先バレONだと入賞時の先読みが出ないので、OFFでも回す
 const r2 = runRush(N / 2, base, c);
 console.log(`RUSH中 ${N / 2}回転: 大当り 1/${(N / 2 / r2.hits).toFixed(1)}`);
 runRush(N / 4, { ...base, rushMode: "renda" }, c);

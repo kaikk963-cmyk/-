@@ -171,7 +171,9 @@
         color: null, colorInfo: null, reveal: "start", breakTo: null,
         preread: [], senbare: null, ura: false, notice: false,
       };
-      const minRel = D.SAKIYOMI_MIN_REL[rush ? "rush" : "normal"][custom.sakiyomi] ?? 0;
+      // 先バレONのときは実機と同じく入賞時の先読み（保留変化・先読み予告）は出ない
+      const senbareOn = !rush && custom.senbare && custom.senbare !== "off";
+      const minRel = senbareOn ? Infinity : D.SAKIYOMI_MIN_REL[rush ? "rush" : "normal"][custom.sakiyomi] ?? 0;
       const effects = !rush || custom.rushMode === "default";
 
       if (effects) {
@@ -416,6 +418,12 @@
       return g.options[0];
     }
 
+    // 先バレした保留より前の変動（先バレ演出中）。予告もリーチもなく、すぐにハズレで止まる
+    function quietScenario(hold) {
+      const digits = missDigits(null);
+      return { steps: [{ t: "reels", digits, reach: false, quick: true }, { t: "final", digits, hit: false, charge: false }], reach: null, digits };
+    }
+
     function normalScenario(hold, custom) {
       const result = hold.result;
       const out = outOf(result);
@@ -597,7 +605,7 @@
       return steps;
     }
 
-    return { P, recalc, toBase, setBase, baseOf, pick, drawNormal, drawRush, makeHold, normalScenario, rushScenario, bonusSteps };
+    return { P, recalc, toBase, setBase, baseOf, pick, drawNormal, drawRush, makeHold, normalScenario, quietScenario, rushScenario, bonusSteps };
   }
 
   if (typeof module !== "undefined") module.exports = { createEngine };

@@ -926,3 +926,12 @@ button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px s
 .group-art.behind img { filter: brightness(0.75); }
 @keyframes groupIn { from { transform: scale(1.25); opacity: 0; } }
 .now-rel { display: block; font-size: 10px; color: var(--gold); margin-top: 2px; white-space: nowrap; }
+
+/* 先バレ：陰陽玉保留と、当該変動までの表示 */
+.hold.c-yin { background: #fff; box-shadow: 0 0 10px #ff5a5a, 0 0 2px #000; overflow: hidden; position: relative; }
+.hold.c-yin::before { content: ""; position: absolute; inset: 0; border-radius: 50%; background: conic-gradient(#e8313f 0 180deg, #fff 180deg 360deg); animation: spin 2.4s linear infinite; }
+.senbare-banner { position: absolute; left: 50%; top: 13%; transform: translateX(-50%); z-index: 6; padding: 3px 12px; border-radius: 999px; background: rgba(140, 10, 30, 0.9); border: 1px solid #ffd257; color: #fff; font-size: clamp(11px, 4.2cqw, 15px); white-space: nowrap; box-shadow: 0 0 12px #ff3b52; animation: bannerPulse 1.2s ease-in-out infinite alternate; pointer-events: none; }
+.senbare-banner b { color: #ffd257; margin-right: 4px; }
+@keyframes bannerPulse { to { box-shadow: 0 0 22px #ff3b52; } }
+.stage.senbare-on .bg { filter: saturate(1.4) hue-rotate(-12deg) brightness(0.85); }
+.yinyang.armed svg { filter: drop-shadow(0 0 10px #ff5a5a) drop-shadow(0 0 18px #ffd257); }
