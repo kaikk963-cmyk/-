@@ -17,28 +17,32 @@
   const LCD = { x0: 42, x1: 258, y0: 92, y1: 318 };
   // 入賞口
   const HESO = { x: 150, y: 418, w: 4.2 };
-  const DENCHU = { x: 256, y: 386, w: 6 };
-  const ATTACKER = { x0: 222, x1: 246, y: 426 };
+  const DENCHU = { x: 252, y: 386, w: 10 }; // w は羽根が開いたときの受け口の半幅
+  const ATTACKER = { x0: 214, x1: 252, y: 426 };
   const POCKETS = [{ x: 22, y: 442, w: 5, pay: 5 }, { x: 196, y: 438, w: 4, pay: 5 }];
   // 道釘（玉が転がる道）。途中のすき間から落ちた玉はアウト
   const RAMPS = [
     // 液晶の屋根（落ちてきた玉を左右に振り分ける）
-    [40, 94, 150, 82], [150, 82, 260, 94],
+    // 頂点を右寄りにして、左打ちで上まで届いた玉は左ルートへ転がるようにする
+    [40, 94, 176, 80], [176, 80, 260, 94],
     // 左ルートの下からヘソへ寄せる道
-    [6, 354, 60, 364], [69, 365.5, 104, 372], [112, 373.5, 136, 378],
+    [10, 354, 60, 364], [69, 365.5, 104, 372], [112, 373.5, 136, 378],
     // 右打ちルート：電チューへ寄せる道と、アタッカーへ流す道
-    [294, 364, 266, 378], [294, 404, 250, 414],
+    [296, 360, 264, 377], [294, 404, 250, 414],
   ];
   const RAIL_FRICTION = 0.55;
+  // 内レール：打ち出しレーン（盤面の左端）と盤面を仕切る。上から落ちてきた玉はここより右を通る
+  const INNER_RAIL = { x: 10, y0: 128, y1: 352 };
   // ワープ入口（液晶の左の縁）に入った玉は、液晶下のステージに出てくる
-  const WARP = { x0: 36, x1: 41, y0: 200, y1: 204, outX: 50 };
+  const WARP = { x0: 33, x1: 41, y0: 196, y1: 206, outX: 50 };
+  const WARP_RATE = 0.12;
   // 2段ステージ（どちらも中央が低い皿）。ワープから出た玉は上段を転がり、
   // 中央から落ちれば下段へ。下段の中央の溝から落ちればヘソの真上、そうでなければ左右にこぼれる
   const STAGE_UP = [[44, 324, 150, 331], [150, 331, 256, 324]];
   const STAGE_LOW = [[72, 346, 150, 352], [150, 352, 228, 346]];
   const STAGE = STAGE_UP.concat(STAGE_LOW);
-  const UP_CENTER = 0.45;   // 上段の中央から下段へ落ちる割合
-  const LOW_CENTER = 0.55;  // 下段の中央の溝からヘソへ向かう割合
+  const UP_CENTER = 0.55;   // 上段の中央から下段へ落ちる割合
+  const LOW_CENTER = 0.7;  // 下段の中央の溝からヘソへ向かう割合
   const stageUpY = (x) => (x < 150 ? 324 + ((x - 44) / 106) * 7 : 331 - ((x - 150) / 106) * 7) - BALL - 1;
   const stageLowY = (x) => (x < 150 ? 346 + ((x - 72) / 78) * 6 : 352 - ((x - 150) / 78) * 6) - BALL - 1;
   // 風車（当たった玉を回転方向にはじく）
@@ -61,7 +65,7 @@
     }
     // 右ルート（右打ち）
     for (let row = 0, y = 110; y <= 316; row++, y += 13) {
-      for (let x = 266 + (row % 2) * 8; x <= 292; x += 16) if (inside(x, y) && outsideLcd(x, y)) pins.push([x, y]);
+      for (let x = 266 + (row % 2) * 8; x <= 284; x += 16) if (inside(x, y) && outsideLcd(x, y)) pins.push([x, y]);
     }
     // 液晶の上（天釘）
     for (let x = 60; x <= 240; x += 20) if (inside(x, 70)) pins.push([x, 70 + (x % 40 === 0 ? 0 : 4)]);
@@ -165,8 +169,9 @@
             b.vx *= f; b.vy *= f;
           }
         }
-        // 左右の壁
-        if (b.x < 4 + BALL) { b.x = 4 + BALL; b.vx = Math.abs(b.vx) * 0.4; }
+        // 左右の壁。盤面に入った玉は内レール（打ち出しレーンとの仕切り）より内側を落ちる
+        const leftWall = b.up && b.y > INNER_RAIL.y0 && b.y < INNER_RAIL.y1 ? INNER_RAIL.x + BALL : 4 + BALL;
+        if (b.x < leftWall) { b.x = leftWall; b.vx = Math.abs(b.vx) * 0.4 + 6; }
         if (b.x > W - 4 - BALL) { b.x = W - 4 - BALL; b.vx = -Math.abs(b.vx) * 0.4; }
         // 打ち出したあと盤面まで届かずに落ちてきた玉は戻り玉（ファウル）
         if (b.y < CY - 40) b.up = true;
@@ -208,8 +213,8 @@
           keep.push(b);
           continue;
         }
-        // ワープ（右向きに飛び込んだ玉だけ入る）
-        if (b.vx > 0 && b.x > WARP.x0 && b.x < WARP.x1 && b.y > WARP.y0 && b.y < WARP.y1) {
+        // ワープ：入口の前を通った玉の一部が吸い込まれる（1つの玉につき判定は1回）
+        if (!b.warpTried && b.x > WARP.x0 && b.x < WARP.x1 && b.y > WARP.y0 && b.y < WARP.y1 && (b.warpTried = true) && this.rng() < WARP_RATE) {
           this.stats.warp = (this.stats.warp || 0) + 1;
           const r = this.rng();
           const out = r < UP_CENTER ? "center" : r < (1 + UP_CENTER) / 2 ? "left" : "right";
@@ -383,6 +388,10 @@
       g.fillRect(ATTACKER.x0, ATTACKER.y + 3, ATTACKER.x1 - ATTACKER.x0, 5);
       g.fillStyle = "#fff";
       g.fillText("アタッカー", (ATTACKER.x0 + ATTACKER.x1) / 2, ATTACKER.y + 16);
+      // 内レール
+      g.strokeStyle = "rgba(243,194,82,.7)";
+      g.lineWidth = 1.5;
+      g.beginPath(); g.moveTo(INNER_RAIL.x, INNER_RAIL.y0); g.lineTo(INNER_RAIL.x, INNER_RAIL.y1); g.stroke();
       // ステージ
       g.strokeStyle = "#f3c252";
       g.lineWidth = 2;
@@ -417,7 +426,7 @@
         grd.addColorStop(1, "#8d93a8");
         g.fillStyle = grd;
         g.beginPath();
-        g.arc(b.x, b.y, BALL, 0, 7);
+        g.arc(b.x, b.y, BALL * 1.2, 0, 7);
         g.fill();
       }
     }

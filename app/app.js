@@ -8,7 +8,7 @@
   const fmt = (n) => Math.round(n).toLocaleString("ja-JP");
 
   const DEFAULT_CUSTOM = { senbare: "s40", sakiyomi: "osusume", leverBuru: "off", impact: "off", rushMode: "default", challenge: "koumakan" };
-  const DEFAULT_SETTINGS = { boardV: 4, board: "on", shot: "left", autoShot: "on", leftStrength: 20, rightStrength: 90, hesoOpen: 1.75, rate: 18, speed: "normal", autoPush: "off", sound: "on", bgm: "off", volume: 0.7, vibe: "on", showRel: "on" };
+  const DEFAULT_SETTINGS = { boardV: 5, board: "on", shot: "left", autoShot: "on", leftStrength: 45, rightStrength: 90, hesoOpen: 2.25, rate: 18, speed: "normal", autoPush: "off", sound: "on", bgm: "off", volume: 0.7, vibe: "on", showRel: "on" };
   const SPEEDS = { slow: 1.35, normal: 1, fast: 0.5, turbo: 0.2 };
   const SPEED_LABEL = { slow: "ゆっくり", normal: "標準", fast: "高速", turbo: "爆速" };
   const DEFAULT_DEV = { overrides: {}, force: "none", senbare: "off", rush6000: null, dropBtn: "off" };
@@ -158,15 +158,20 @@
     boardView = B.createBoardView($("board"), board);
     let last = performance.now();
     const frame = (t) => {
+      // 先に次のフレームを予約しておく（途中で例外が出ても盤面が止まらないように）
+      requestAnimationFrame(frame);
       const dt = Math.min(0.05, (t - last) / 1000);
       last = t;
+      try {
       // 盤面は常に描く（物理演算OFFのときは玉を打たない）
       board.firing = useBoard() && handleOn && !state.completed;
       board.mode = inBonus ? "bonus" : state.mode;
       board.step(dt / speedFactor());
       boardView.draw();
       if (useBoard()) renderShotHint();
-      requestAnimationFrame(frame);
+      } catch (e) {
+        console.error(e);
+      }
     };
     requestAnimationFrame(frame);
   }
@@ -581,9 +586,9 @@
         ${warn ? `<p class="warn">${warn}</p>` : ""}</details>`;
     }
     const big = state.dev.rush6000 ?? devDefaults.rush6000;
-    body += field("ハンドルの強さ（物理盤面）", "左打ち・右打ちを選んだときの打ち出しの強さ（0〜100）。左打ちは15〜20あたりがよく回る。",
+    body += field("ハンドルの強さ（物理盤面）", "左打ち・右打ちを選んだときの打ち出しの強さ（0〜100）。左打ちは35〜55あたりで、玉が盤面の上まで上がってから左側に落ちる。",
       `<div class="drop-btns" style="grid-template-columns:auto 1fr auto 1fr;align-items:center">左<input class="num-in" type="number" min="0" max="100" step="1" data-strength="leftStrength" value="${state.settings.leftStrength}" aria-label="左打ちの強さ">右<input class="num-in" type="number" min="0" max="100" step="1" data-strength="rightStrength" value="${state.settings.rightStrength}" aria-label="右打ちの強さ"></div>`);
-    body += field("ヘソ釘の開き（物理盤面）", "大きいほどヘソで弾かれにくく、よく回る。標準は1.75（約19回転/1000円）。", `<input id="hesoRange" class="range" type="range" min="0.5" max="2.5" step="0.25" value="${state.settings.hesoOpen}">`, `<b id="hesoVal">${state.settings.hesoOpen}</b>`);
+    body += field("ヘソ釘の開き（物理盤面）", "大きいほどヘソで弾かれにくく、よく回る。標準は2.25（約20回転/1000円）。", `<input id="hesoRange" class="range" type="range" min="0.5" max="2.5" step="0.25" value="${state.settings.hesoOpen}">`, `<b id="hesoVal">${state.settings.hesoOpen}</b>`);
     body += field("夢想封印MAX（6000発）の割合", "RUSH中の大当りのうち、BONUS中に陰陽玉が落ちて6000発になる割合。",
       `<input class="num-in wide" type="number" inputmode="decimal" min="0" max="100" step="0.5" data-dev="rush6000" value="${+(big * 100).toFixed(2)}" aria-label="6000発の割合（%）">`, `<b>${+(big * 100).toFixed(1)}%</b>`);
     body += `<div class="field"><button type="button" class="btn-danger" id="devReset">すべて元の値に戻す</button></div>`;
@@ -1083,7 +1088,7 @@
 
     const hot = window.claude && window.claude.hot;
     if (hot && hot.snapshot) hot.snapshot(() => ({ state }));
-    window.gensouDebug = { stage, engine }; // テスト用
+    window.gensouDebug = { stage, engine, get board() { return board; }, get state() { return state; } }; // テスト用
   }
 
   if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
