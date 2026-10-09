@@ -114,6 +114,40 @@ await page.click("#menuClose");
 const artInReels = await page.$$eval(".cell-art", (n) => n.length);
 console.log("立ち絵が入った図柄セル:", artInReels);
 await page.screenshot({ path: path.join(out, "07-art.png") });
+
+// 役物投下・先バレの音の差し替え（生成したwavを取り込んで、取り込んだ音が鳴るか確かめる）
+function makeWav(freq) {
+  const rate = 8000, n = 2400, buf = Buffer.alloc(44 + n * 2);
+  buf.write("RIFF", 0); buf.writeUInt32LE(36 + n * 2, 4); buf.write("WAVEfmt ", 8);
+  buf.writeUInt32LE(16, 16); buf.writeUInt16LE(1, 20); buf.writeUInt16LE(1, 22);
+  buf.writeUInt32LE(rate, 24); buf.writeUInt32LE(rate * 2, 28); buf.writeUInt16LE(2, 32); buf.writeUInt16LE(16, 34);
+  buf.write("data", 36); buf.writeUInt32LE(n * 2, 40);
+  for (let i = 0; i < n; i++) buf.writeInt16LE(Math.round(Math.sin(2 * Math.PI * freq * i / rate) * 12000), 44 + i * 2);
+  return buf;
+}
+await page.evaluate(() => {
+  window.__bufStarts = 0;
+  const orig = AudioBufferSourceNode.prototype.start;
+  AudioBufferSourceNode.prototype.start = function (...a) { if (this.buffer && this.buffer.duration > 0.2) window.__bufStarts++; return orig.apply(this, a); };
+});
+await page.click("#menuBtn");
+await page.click('#menuTabs [data-tab="sound"]');
+for (const [slot, f] of [["yakumono", 440], ["senbare", 660]]) {
+  await page.setInputFiles(`[data-asset="sound:${slot}"]`, { name: `${slot}.wav`, mimeType: "audio/wav", buffer: makeWav(f) });
+  await page.waitForSelector(`[data-asset-del="sound:${slot}"]`, { timeout: 5000 });
+}
+await page.waitForTimeout(500);
+for (const sel of ['[data-try-sound="yakumono"]', '[data-try="normal"][data-try-sound="senbare"]', '[data-try="high"][data-try-sound="senbare"]', '[data-preview="senbare"]']) {
+  await page.click(sel);
+  await page.waitForTimeout(300);
+}
+await page.screenshot({ path: path.join(out, "08-sound.png") });
+await page.click("#menuClose");
+await page.click("#dropBtn");
+await page.waitForTimeout(300);
+const customPlays = await page.evaluate(() => window.__bufStarts);
+console.log("取り込んだ音の再生回数:", customPlays);
+if (customPlays < 5) errors.push(`取り込んだ音が鳴っていない（${customPlays}回）`);
 await page.screenshot({ path: path.join(out, "06-steps.png") });
 
 const s = await read();

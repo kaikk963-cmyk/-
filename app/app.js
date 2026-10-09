@@ -655,7 +655,7 @@
       seg("dev.force", { none: "なし", rushHit: "大当り→RUSH", hit: "大当り→通常", charge: "チャージ", miss: "ハズレ" }, state.dev.force));
     body += field("先バレを強制", "保留入賞時に陰陽玉を必ず落とす（先バレのカスタムがOFFでも落ちる）。",
       seg("dev.senbare", { off: "OFF", once: "次の1回", always: "毎回" }, state.dev.senbare));
-    body += field("陰陽玉を今すぐ落とす", "役物を落とす演出だけを出す。抽選結果には関係しない。当たりにしたいときは「次の入賞を固定」と組み合わせる。",
+    body += field("陰陽玉を今すぐ落とす", "役物を落とす演出だけを出す。抽選結果には関係しない。当たりにしたいときは「次の入賞を固定」と組み合わせる。音の差し替えは「サウンド」タブ。",
       `<div class="drop-btns"><button type="button" data-drop="normal">通常音</button><button type="button" data-drop="low">低音</button><button type="button" data-drop="high">高音</button><button type="button" data-drop="weak">弱落下</button></div>`);
     body += field("RUSHを強制終了", "弾幕RUSH中に押すと、今の変動（とBONUS）が終わったところでRUSHを終える。", `<button type="button" class="btn-danger" data-endrush ${state.mode === "rush" ? "" : "disabled"}>${state.mode === "rush" ? "RUSHを今すぐ終わらせる" : "RUSH中だけ押せます"}</button>`);
     body += field("メイン画面に役物投下ボタン", "PUSHとレバーの横に「役物投下」ボタンと、RUSH中は「RUSH終了」ボタンを出す（初期ON）。", seg("dev.dropBtn", { off: "OFF", on: "ON" }, state.dev.dropBtn));
@@ -696,15 +696,19 @@
   }
 
   // 取り込める効果音。種類ごとの音がないときは共通の音、それもなければ標準の音が鳴る
+  // main: サウンドタブの上に大きく出すもの
   const SOUND_SLOTS = [
-    { name: "drop", label: "陰陽玉落下（共通）", sub: "種類ごとの音がないときに使う" },
-    { name: "drop:normal", label: "陰陽玉落下（通常音）", sub: "変動中・リーチ中・役物投下ボタン" },
+    { name: "yakumono", label: "役物投下ボタンの音", sub: "メイン画面の「役物 投下」ボタン。ないときは陰陽玉落下の音", main: true,
+      tries: [["normal", "役物を落としてみる"]], trySound: "yakumono" },
+    { name: "senbare", label: "先バレの音", sub: "保留入賞時の落下（低音・高音もこの音）。ないときは陰陽玉落下の音", main: true,
+      tries: [["normal", "先バレ"], ["low", "先バレ（低音）"], ["high", "先バレ（高音）"]], trySound: "senbare" },
+    { name: "drop", label: "陰陽玉落下（共通）", sub: "変動中・リーチ中の落下。種類ごとの音がないときに使う" },
+    { name: "drop:normal", label: "陰陽玉落下（通常音）", sub: "変動中・リーチ中の通常の落下" },
     { name: "drop:low", label: "陰陽玉落下（低音・濃厚）", sub: "低音の落下" },
     { name: "drop:high", label: "陰陽玉落下（高音・濃厚）", sub: "高音の落下・デバイス時の落下" },
     { name: "weakDrop", label: "陰陽玉の弱落下", sub: "西行妖の開花予告など" },
-    { name: "senbare", label: "先バレ（共通）", sub: "保留入賞時の落下。ないときは陰陽玉落下の音" },
-    { name: "senbare:low", label: "先バレ（低音・濃厚）", sub: "先バレの低音" },
-    { name: "senbare:high", label: "先バレ（高音・濃厚）", sub: "先バレの高音" },
+    { name: "senbare:low", label: "先バレ（低音・濃厚）だけ", sub: "ないときは「先バレの音」" },
+    { name: "senbare:high", label: "先バレ（高音・濃厚）だけ", sub: "ないときは「先バレの音」" },
     { name: "kyuin", label: "大当り", sub: "図柄がそろったとき" },
     { name: "rushIn", label: "RUSH突入", sub: "弾幕RUSH突入・継続" },
   ];
@@ -726,16 +730,30 @@
         <div class="acts"><label class="btn">${u ? "変更" : "画像を選ぶ"}<input type="file" accept="image/*" data-asset="${sl.key}" aria-label="${sl.name}の画像"></label>
         ${u ? `<button type="button" data-asset-del="${sl.key}" aria-label="${sl.name}の画像を削除">削除</button>` : ""}</div></div>`;
     }).join("");
-    body += `<h3 class="art-head">効果音</h3><p class="note">音声ファイル（mp3など）を取り込むと、その場面の効果音が差し替わります。音量は自動でほかの効果音にそろえます。</p>`;
-    body += SOUND_SLOTS.map((sl) => {
-      const key = `sound:${sl.name}`;
-      const has = !!A.blob(key);
-      return `<div class="asset-row"><div class="thumb"><span aria-hidden="true">${has ? "♪" : "—"}</span></div>
-        <div class="name">${sl.label}<small>${has ? "取り込んだ音" : "標準の音"}・${sl.sub}</small></div>
-        <div class="acts"><button type="button" data-preview="${sl.name}" aria-label="${sl.label}を試し聴き">▶</button>
-        <label class="btn">${has ? "変更" : "音を選ぶ"}<input type="file" accept="audio/*" data-asset="${key}" aria-label="${sl.label}のファイル"></label>
-        ${has ? `<button type="button" data-asset-del="${key}" aria-label="${sl.label}を標準に戻す">戻す</button>` : ""}</div></div>`;
-    }).join("");
+    body += `<p class="note">効果音（役物投下・先バレなど）の差し替えは「サウンド」タブからできます。</p>`;
+    return body;
+  }
+
+  function soundRow(sl) {
+    const key = `sound:${sl.name}`;
+    const has = !!window.GensouAssets.blob(key);
+    return `<div class="asset-row${sl.main ? " main-sound" : ""}"><div class="thumb"><span aria-hidden="true">${has ? "♪" : "—"}</span></div>
+      <div class="name">${sl.label}<small>${has ? `<b class="custom-on">取り込んだ音</b>` : "標準の音"}・${sl.sub}</small></div>
+      <div class="acts"><button type="button" data-preview="${sl.name}" aria-label="${sl.label}を試し聴き">▶</button>
+      <label class="btn">${has ? "変更" : "音を選ぶ"}<input type="file" accept="audio/*,.mp3,.m4a,.wav,.ogg,.aac" data-asset="${key}" aria-label="${sl.label}のファイル"></label>
+      ${has ? `<button type="button" data-asset-del="${key}" aria-label="${sl.label}を標準に戻す">戻す</button>` : ""}</div></div>
+      ${sl.tries ? `<div class="drop-btns try-btns">${sl.tries.map(([k, t]) => `<button type="button" data-try="${k}" data-try-sound="${sl.trySound}">${t}</button>`).join("")}</div>` : ""}`;
+  }
+
+  function renderSound() {
+    let body = `<p class="note">スマホの中の音声ファイル（mp3・m4a・wav など）を選ぶと、その場面の音が差し替わります。音量はほかの効果音に自動でそろえます。<b>▶</b>で音だけ、下のボタンで実際に液晶に陰陽玉を落として確認できます（抽選には関係しません）。</p>`;
+    if (window.GensouCloud.canStoreArt()) body += `<p class="note">取り込んだ音は claude.ai のアカウントにも保存されるので、アプリを閉じても消えません。</p>`;
+    else if (!window.GensouAssets.persistent()) body += `<p class="warn">この環境では音を保存できないため、ページを閉じると取り込んだ音は消えます。</p>`;
+    body += `<h3 class="art-head">役物投下・先バレ</h3>`;
+    body += SOUND_SLOTS.filter((sl) => sl.main).map(soundRow).join("");
+    body += `<details class="dev-group"><summary>ほかの効果音・種類ごとの音</summary>
+      <p class="note">音を探す順番：種類ごとの音 → その場面の音 → 陰陽玉落下（共通）→ 標準の音。</p>
+      ${SOUND_SLOTS.filter((sl) => !sl.main).map(soundRow).join("")}</details>`;
     return body;
   }
 
@@ -945,6 +963,8 @@
       body += field("信頼度を表示", "出た演出と信頼度を「演出ログ」に表示する。", seg("settings.showRel", { on: "ON", off: "OFF" }, st.showRel));
     } else if (tab === "dev") {
       body = renderDev();
+    } else if (tab === "sound") {
+      body = renderSound();
     } else if (tab === "art") {
       body = renderArt();
     } else if (tab === "spec") {
@@ -1106,6 +1126,11 @@
         const k = drop.dataset.drop;
         stage.drop(k === "weak" ? "normal" : k, k === "weak");
       }
+      const tryBtn = e.target.closest("[data-try]");
+      if (tryBtn) {
+        window.Sound.unlock();
+        stage.drop(tryBtn.dataset.try, false, tryBtn.dataset.trySound);
+      }
       const del = e.target.closest("[data-asset-del]");
       if (del) {
         await window.GensouAssets.remove(del.dataset.assetDel);
@@ -1120,7 +1145,7 @@
     $("rushEndBtn").addEventListener("click", requestEndRush);
     $("dropBtn").addEventListener("click", () => {
       window.Sound.unlock();
-      stage.drop("normal");
+      stage.drop("normal", false, "yakumono");
     });
     $("menuTabs").addEventListener("click", (e) => {
       const b = e.target.closest("[data-tab]");

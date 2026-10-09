@@ -1207,8 +1207,8 @@
         setBg(bg.classList[1] || baseTone);
       },
       // 開発者用：陰陽玉を今すぐ落とす（演出のみで抽選には関係しない）
-      drop(kind = "normal", weak = false) {
-        dropYinyang(kind, { weak });
+      drop(kind = "normal", weak = false, sound = null) {
+        dropYinyang(kind, { weak, sound });
         if (!weak) flash();
       },
       setSpeed(v) { speed = v; },

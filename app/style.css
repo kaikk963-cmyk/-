@@ -674,7 +674,7 @@ button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px s
 @media (min-width: 700px) { .scrim { align-items: center; } .sheet { border-radius: 20px; } }
 .sheet-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 10px; }
 .sheet-head h2 { margin: 0; font-family: var(--font-display); font-size: 22px; font-weight: 400; }
-.tabs { display: grid; grid-template-columns: repeat(auto-fit, minmax(54px, 1fr)); gap: 4px; margin-bottom: 12px; background: var(--night); padding: 4px; border-radius: 12px; }
+.tabs { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; margin-bottom: 12px; background: var(--night); padding: 4px; border-radius: 12px; }
 .tabs button { border: 0; background: transparent; padding: 8px 2px; font-size: 12px; }
 .tabs button[aria-selected="true"] { background: var(--panel-2); color: var(--gold); font-weight: 700; }
 .field { display: grid; gap: 6px; padding: 10px 0; border-bottom: 1px solid var(--line); }
@@ -813,3 +813,6 @@ button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px s
 .ctl.rush-end { background: linear-gradient(var(--panel-2), var(--panel)); border-color: #ff9a1f; color: #ffb36b; }
 .btn-danger:disabled { opacity: 0.5; cursor: not-allowed; }
 .bonus-screen .count { font-family: var(--font-num); font-size: 13px; color: var(--c-gold); min-height: 1em; font-variant-numeric: tabular-nums; }
+.try-btns { grid-template-columns: repeat(auto-fit, minmax(90px, 1fr)); padding: 6px 0 10px; border-bottom: 1px solid var(--line); }
+.asset-row.main-sound { border-bottom: 0; }
+.asset-row .name .custom-on { color: var(--gold); font-weight: 700; }

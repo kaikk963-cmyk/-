@@ -122,6 +122,8 @@
     },
     // 先バレ（保留入賞時の陰陽玉落下）。音を取り込んでいなければ落下音と同じ
     senbare(kind = "normal") { sfx.drop(kind); },
+    // 役物投下ボタン。音を取り込んでいなければ落下音と同じ
+    yakumono(kind = "normal") { sfx.drop(kind); },
     // 陰陽玉落下。通常音／低音／高音
     drop(kind = "normal") {
       if (kind === "low") {
@@ -181,6 +183,7 @@
     const kind = typeof arg === "string" ? arg : "";
     if (name === "senbare") return [`senbare:${kind}`, "senbare", `drop:${kind}`, "drop"];
     if (name === "drop") return [`drop:${kind}`, "drop"];
+    if (name === "yakumono") return ["yakumono", `drop:${kind}`, "drop"];
     return [name];
   }
 
