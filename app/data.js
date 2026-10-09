@@ -61,7 +61,7 @@
     senbare: {
       name: "先陰陽玉落下（先バレ）",
       choices: { off: "OFF", s40: "40%", s90: "90%", ex: "EX" },
-      desc: "保留入賞時に陰陽玉役物が落下。EXは落下すれば約99%でRUSH濃厚。落下後にPUSHで裏ボタン。",
+      desc: "保留入賞時に陰陽玉役物が落下。EXは落下すれば大当り＋RUSH濃厚（100%）。落下後にPUSHで裏ボタン。",
     },
     sakiyomi: {
       name: "先読み",
@@ -90,7 +90,7 @@
   const SENBARE = {
     s40: senbareGroup(0.4, 0.45, false),
     s90: senbareGroup(0.9, 0.45, false),
-    ex: senbareGroup(0.99, 0.2, true),
+    ex: senbareGroup(1, 0.2, true),
   };
   const URA_BUTTON_RATE = 0.5; // 先バレしたRUSH直行の当たりのうち、裏ボタンが成功する割合
 
@@ -351,14 +351,14 @@
     ]),
   ];
 
-  // 復活演出（SPリーチがいったんハズレで止まったあと）。煽りは失敗することもある。
+  // 復活演出（SPリーチがいったんハズレで止まったあと）。復活すれば大当り濃厚。
   const NORMAL_REVIVE = group("revive", "復活演出", "sp", [
-    opt("aori", "復活煽り", 0.3, 0.06),
+    opt("aori", "復活煽り", 1, 0.06),
     opt("drop", "陰陽玉落下で即復活", 1, 0.04),
     opt("sukima", "スキマから復活", 1, 0.03),
   ]);
   const RUSH_REVIVE = group("reviveRush", "復活演出（RUSH）", "rushSp", [
-    opt("aori", "復活煽り", 0.45, 0.08),
+    opt("aori", "復活煽り", 1, 0.08),
     opt("drop", "陰陽玉落下で即復活", 1, 0.05),
   ]);
 
@@ -456,13 +456,84 @@
     opt("red", "赤", 0.7, 0.4, { color: "red" }),
   ]);
 
+  // ---------------- セリフ（すべてオリジナル） ----------------
+  // [話すキャラ, セリフ]。会話予告は2人のかけあい。
+
+  const SERIFU = {
+    kaiwa: {
+      white: [
+        [["marisa", "よう霊夢、今日も暇そうだな"], ["reimu", "暇じゃないわよ。お茶を飲んでるの"]],
+        [["reimu", "賽銭箱、今日も空っぽね……"], ["marisa", "いつものことだぜ"]],
+        [["cirno", "霊夢！あたいと勝負しろ！"], ["reimu", "はいはい、また今度ね"]],
+        [["sanae", "霊夢さん、お参りに来ましたよ"], ["reimu", "あら珍しい。お賽銭も置いていきなさい"]],
+        [["aya", "今日の幻想郷は平和ですねぇ"], ["reimu", "記事にならなくて残念だったわね"]],
+      ],
+      red: [
+        [["marisa", "おい霊夢、空が紅いぜ"], ["reimu", "……異変ね。行くわよ"]],
+        [["sakuya", "お嬢様がお待ちですわ"], ["reimu", "上等じゃない。案内しなさい"]],
+        [["yukari", "今夜の幻想郷は、少し騒がしいわね"], ["reimu", "あんたが言うと嫌な予感しかしないわ"]],
+        [["flandre", "ねえ、お姉様より強いの？"], ["reimu", "試してみる？"]],
+      ],
+      gold: [
+        [["marisa", "霊夢、ここは任せたぜ！"], ["reimu", "ええ。この異変、ここで終わらせる！"]],
+        [["remilia", "運命は、もう決まっているのよ"], ["reimu", "だったら、その運命ごと撃ち抜くわ"]],
+        [["yukari", "準備はいいかしら、博麗の巫女"], ["reimu", "いつでもいいわよ。全部まとめて片付ける"]],
+      ],
+    },
+    // リーチ発展時の相手（味方）のひとこと
+    intro: {
+      rumia: ["おなかすいたー。そこの人間、おいしそう", "まっくらなところで遊ぼうよー"],
+      cirno: ["あたいの氷で、カチコチにしてやる！", "今日こそあたいが勝つんだから！"],
+      meiling: ["ここから先は、一歩も通しませんよ", "門番の意地、見せてあげます！"],
+      sakuya: ["お嬢様の邪魔はさせませんわ", "あなたの時間は、もう私のものですわ"],
+      remilia: ["こんなに紅い夜だもの。楽しませてもらうわ", "跪きなさい。今ならまだ許してあげる"],
+      flandre: ["ねえ、いっしょに遊ぼ？すぐ壊れないでね", "きゃはは！まだ遊べるよね？"],
+      yukari: ["ふふ、少しだけ手を貸してあげるわ", "境界の向こうから、こんにちは"],
+      youmu: ["この剣で、ここは通しません", "半人前でも、負けるつもりはありません"],
+      yuyuko: ["あらあら、元気な巫女さんねぇ", "お腹いっぱい、遊んであげるわ"],
+      marisa: ["ここは私に任せな、派手にいくぜ！", "霊夢、後ろは見なくていいぜ"],
+      sanae: ["奇跡を起こしてみせます！", "霊夢さん、今日は負けませんよ！"],
+      aya: ["これはスクープの予感ですね！", "いい顔、一枚いただきます！"],
+      reimu: ["さっさと終わらせて帰るわよ", "今日の私は、ちょっと本気よ"],
+    },
+    // 霊夢の返し（テロップ）。色で信頼度が変わる
+    telop: {
+      white: ["面倒だけど、行くしかないわね", "まだ本気じゃないわよ", "避けて、撃つ。それだけよ"],
+      red: ["ここで決めるわ！", "もう逃がさないわよ", "この弾幕、見切った！"],
+      gold: ["異変は、ここで終わりよ！", "博麗の巫女を舐めないで！", "全部まとめて、封印する！"],
+    },
+    // 弾幕クライマックスのモノローグ
+    monologue: {
+      white: ["……強い。でも、負けられない", "深呼吸。いつもどおりに"],
+      red: ["ここを越えれば、異変は終わる", "見える……弾の隙間が"],
+      gold: ["負ける気がしないわ", "今なら、何だって避けられる"],
+    },
+    seien: {
+      general: [["sanae", "霊夢さん、ファイトです！"], ["aya", "いい写真、撮らせてくださいね！"], ["cirno", "あたいの次に強いんだから、勝てよ！"], ["meiling", "がんばってくださーい！"]],
+      marisa: [["marisa", "霊夢なら大丈夫だぜ！"], ["marisa", "ぶちかませ、霊夢！"]],
+    },
+    revive: {
+      aori: [["reimu", "……まだよ。まだ終わってない"]],
+      drop: [["reimu", "甘いわね！"]],
+      sukima: [["yukari", "まだ終わらせないわ"]],
+    },
+    bonus: [["reimu", "異変解決、ね。さっさと片付けるわ"], ["marisa", "やったな霊夢！"]],
+    rushIn: [["reimu", "ここからが本番よ！"], ["marisa", "弾幕ラッシュの始まりだぜ！"]],
+    rushFail: [["reimu", "……今日はここまでね"], ["marisa", "惜しかったな。次いこうぜ"]],
+    rushContinue: [["reimu", "まだまだいけるわ！"], ["marisa", "止まらないぜ！"], ["sakuya", "お見事ですわ"], ["remilia", "面白いわね、もっと見せなさい"]],
+    rushEnd: [["reimu", "ふう、いい弾幕だったわ"], ["marisa", "楽しかったぜ、またやろうな"]],
+    charge: [["reimu", "霊力補給、っと"]],
+    promote: [["yukari", "ふふ、おまけよ"]],
+    koumakan: [["remilia", "この館を抜けられるかしら？"]],
+  };
+
   const data = {
     SPEC, CHARS, DIGIT_CHARS, STAGES, CUSTOMS,
     SENBARE, URA_BUTTON_RATE, LEVER_BURU, IMPACT, SAKIYOMI_MIN_REL,
     NORMAL_HOLD, NORMAL_PREREAD, NORMAL_YOKOKU, NORMAL_PRE_REACH, NORMAL_SP_YOKOKU, NORMAL_REACH, KYOUKI_FAIL,
     NORMAL_REVIVE, RUSH_REVIVE,
     RUSH_HOLD, RUSH_PREREAD, RUSH_YOKOKU, RUSH_SP_YOKOKU, RUSH_REACH, RUSH_MODES, RENDA,
-    CHALLENGES, BONUS_URA,
+    CHALLENGES, BONUS_URA, SERIFU,
   };
 
   if (typeof module !== "undefined") module.exports = data;

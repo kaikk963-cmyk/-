@@ -8,7 +8,7 @@
   const fmt = (n) => Math.round(n).toLocaleString("ja-JP");
 
   const DEFAULT_CUSTOM = { senbare: "s40", sakiyomi: "osusume", leverBuru: "off", impact: "off", rushMode: "default", challenge: "koumakan" };
-  const DEFAULT_SETTINGS = { rate: 18, speed: "normal", autoPush: "off", sound: "on", bgm: "off", volume: 0.7, vibe: "on", showRel: "on" };
+  const DEFAULT_SETTINGS = { board: "on", strength: 40, hesoOpen: 2, rate: 18, speed: "normal", autoPush: "off", sound: "on", bgm: "off", volume: 0.7, vibe: "on", showRel: "on" };
   const SPEEDS = { slow: 1.35, normal: 1, fast: 0.5, turbo: 0.2 };
   const SPEED_LABEL = { slow: "ゆっくり", normal: "標準", fast: "高速", turbo: "爆速" };
   const DEFAULT_DEV = { overrides: {}, force: "none", senbare: "off", rush6000: null, dropBtn: "off" };
@@ -17,6 +17,7 @@
     return {
       v: 1,
       balls: 0, invested: 0, totalOut: 0, usedBalls: 0,
+      fired: 0, returns: 0, // 玉の出入りの記録（持ち玉 = 貸し玉 + 払い出し + 入賞の戻り − 打ち出し）
       spins: 0, sinceBonus: 0, rushSpins: 0,
       hits: 0, charges: 0, rushEntries: 0, rushHits: 0,
       mode: "normal", stLeft: 0, chain: 0, chainBalls: 0, maxChain: 0,
@@ -36,6 +37,8 @@
       s.custom = { ...DEFAULT_CUSTOM, ...s.custom };
       s.settings = { ...DEFAULT_SETTINGS, ...s.settings };
       s.dev = { ...DEFAULT_DEV, ...s.dev };
+      s.fired = s.fired || 0;
+      s.returns = s.returns || 0;
       if (!D.CUSTOMS.senbare.choices[s.custom.senbare]) s.custom.senbare = DEFAULT_CUSTOM.senbare;
       return s;
     } catch {
@@ -76,14 +79,120 @@
     const hold = engine.makeHold("normal", state.custom, takeForce("normal"));
     hold.shown = hold.reveal === "entry" ? hold.color : null;
     state.holds.push(hold);
+    entryArrived();
+    // RUSH中のヘソ入賞は表に出さずに貯めておく（RUSH終了後に消化）
+    if (state.mode === "rush") return;
     renderHolds();
     stage.entry(state.holds.length - 1, hold);
+  }
+
+  function addRushHold() {
+    if (state.rushHolds.length >= S.holdMax) return;
+    const hold = engine.makeHold("rush", state.custom, takeForce("rush"));
+    hold.shown = hold.reveal === "entry" ? hold.color : null;
+    state.rushHolds.push(hold);
+    entryArrived();
+    renderHolds();
+    stage.entry(state.rushHolds.length - 1, hold);
+  }
+
+  // ---------------- 物理盤面 ----------------
+
+  const useBoard = () => state.settings.board === "on";
+  let board = null;
+  let boardView = null;
+  let entryWaiters = [];
+
+  function entryArrived() {
+    const w = entryWaiters;
+    entryWaiters = [];
+    w.forEach((r) => r());
+  }
+  // 入賞を待つ（ハンドルを離したときに抜けられるよう、少しずつ確認する）
+  const waitEntry = () => new Promise((r) => {
+    entryWaiters.push(r);
+    setTimeout(r, 400);
+  });
+
+  function setupBoard() {
+    const B = window.GensouBoard;
+    board = new B.Board({
+      hesoOpen: state.settings.hesoOpen,
+      handlers: {
+        onFire() {
+          if (inBonus) return true; // BONUS中の打ち出しは払い出しに含めて計算済み
+          if (state.balls <= 0) rent();
+          state.balls--;
+          state.fired++;
+          if (state.mode === "normal") state.usedBalls++;
+          scheduleRender();
+          return true;
+        },
+        onHeso() {
+          if (inBonus) return;
+          state.balls += 1;
+          state.returns += 1;
+          addHold();
+          scheduleRender();
+        },
+        onDenchu() {
+          if (inBonus) return;
+          state.balls += 1;
+          state.returns += 1;
+          if (state.mode === "rush") addRushHold();
+          scheduleRender();
+        },
+        onPocket(n) {
+          if (inBonus) return;
+          state.balls += n;
+          state.returns += n;
+          scheduleRender();
+        },
+      },
+    });
+    board.strength = state.settings.strength;
+    boardView = B.createBoardView($("board"), board);
+    let last = performance.now();
+    const frame = (t) => {
+      const dt = Math.min(0.05, (t - last) / 1000);
+      last = t;
+      if (useBoard()) {
+        board.firing = handleOn && !state.completed;
+        board.mode = inBonus ? "bonus" : state.mode;
+        board.step(dt / speedFactor());
+        boardView.draw();
+        renderShotHint();
+      }
+      requestAnimationFrame(frame);
+    };
+    requestAnimationFrame(frame);
+  }
+
+  let lastHint = "";
+  function renderShotHint() {
+    const right = state.settings.strength >= 50;
+    const needRight = inBonus || state.mode === "rush";
+    const text = needRight && !right ? "右打ちしてください ▶" : !needRight && right && handleOn ? "◀ 通常時は左打ち" : "";
+    if (text !== lastHint) {
+      lastHint = text;
+      $("shotHint").textContent = text;
+      $("shotHint").hidden = !text;
+    }
+  }
+
+  function setStrength(v) {
+    state.settings.strength = v;
+    board.strength = v;
+    $("strength").value = v;
+    $("strengthVal").textContent = v;
+    save();
   }
 
   function fireBalls(n) {
     for (let i = 0; i < n; i++) {
       if (state.balls <= 0) rent();
       state.balls--;
+      state.fired++;
       state.usedBalls++;
       if (Math.random() < entryProb()) addHold();
     }
@@ -91,7 +200,7 @@
 
   // 演出の名目時間ぶん打ち出す（変動中にも保留が貯まる）
   function onTime(ms) {
-    if (!handleOn || state.mode !== "normal" || inBonus || state.completed) return;
+    if (useBoard() || !handleOn || state.mode !== "normal" || inBonus || state.completed) return;
     fireAcc += (ms / 60000) * S.firePerMin;
     const n = Math.floor(fireAcc);
     fireAcc -= n;
@@ -139,7 +248,7 @@
   }
 
   async function spinRush() {
-    topUpRushHolds();
+    if (!useBoard()) topUpRushHolds();
     const hold = state.rushHolds.shift();
     current = hold;
     state.stLeft--;
@@ -206,7 +315,8 @@
   }
 
   async function endRush() {
-    await stage.play([{ t: "rushEnd", chain: state.chain, balls: state.chainBalls }]);
+    const line = D.SERIFU.rushEnd[Math.floor(Math.random() * D.SERIFU.rushEnd.length)];
+    await stage.play([{ t: "rushEnd", chain: state.chain, balls: state.chainBalls }, { t: "serif", char: line[0], text: line[1], color: "white" }]);
     addHistory({ type: "end", label: `弾幕RUSH終了 ${state.chain}連`, balls: state.chainBalls, at: null });
     state.mode = "normal";
     state.stLeft = 0;
@@ -248,10 +358,12 @@
       while (!state.completed && !pendingReset) {
         if (state.mode === "rush") {
           if (!handleOn && !state.rushHolds.length) break;
-          await spinRush();
+          if (useBoard() && !state.rushHolds.length) await waitEntry();
+          else await spinRush();
         } else if (!state.holds.length) {
           if (!handleOn) break;
-          await fireUntilEntry();
+          if (useBoard()) await waitEntry();
+          else await fireUntilEntry();
         } else {
           await spinNormal();
         }
@@ -444,6 +556,7 @@
         ${warn ? `<p class="warn">${warn}</p>` : ""}</details>`;
     }
     const big = state.dev.rush6000 ?? devDefaults.rush6000;
+    body += field("ヘソ釘の開き（物理盤面）", "大きいほどヘソに入りやすい。標準は2。", `<input id="hesoRange" class="range" type="range" min="1" max="4" step="0.25" value="${state.settings.hesoOpen}">`, `<b id="hesoVal">${state.settings.hesoOpen}</b>`);
     body += field("夢想封印MAX（6000発）の割合", "RUSH中の大当りのうち、BONUS中に陰陽玉が落ちて6000発になる割合。",
       `<input class="num-in wide" type="number" inputmode="decimal" min="0" max="100" step="0.5" data-dev="rush6000" value="${+(big * 100).toFixed(2)}" aria-label="6000発の割合（%）">`, `<b>${+(big * 100).toFixed(1)}%</b>`);
     body += `<div class="field"><button type="button" class="btn-danger" id="devReset">すべて元の値に戻す</button></div>`;
@@ -665,8 +778,9 @@
       body += field("弾幕RUSH 演出モード", D.RUSH_MODES[c.rushMode].desc, seg("custom.rushMode", Object.fromEntries(Object.entries(D.RUSH_MODES).map(([k, v]) => [k, v.name])), c.rushMode));
       body += field("RUSH突入チャレンジ", D.CHALLENGES[c.challenge].desc, seg("custom.challenge", Object.fromEntries(Object.entries(D.CHALLENGES).map(([k, v]) => [k, v.name])), c.challenge));
     } else if (tab === "settings") {
-      body = field("回転率（1000円あたり）", "ヘソへの入賞しやすさ。等価交換のボーダーは約17.4回転。保留が満タンのときの入賞は無駄になるので、実測はこれより少し下がる。",
-        `<input id="rateRange" class="range" type="range" min="12" max="26" step="0.5" value="${st.rate}">`, `<b id="rateVal">${st.rate}回転</b>`);
+      body = field("玉の物理演算（盤面）", "ONにすると、盤面に玉を打って、ヘソに入った玉だけが回転になる。ハンドルの強さで回り方が変わる。OFFにすると下の回転率どおりに回る。", seg("settings.board", { on: "ON", off: "OFF" }, st.board));
+      body += field("回転率（1000円あたり）", "ヘソへの入賞しやすさ。等価交換のボーダーは約17.4回転。保留が満タンのときの入賞は無駄になるので、実測はこれより少し下がる。",
+        `<input id="rateRange" class="range" type="range" min="12" max="26" step="0.5" value="${st.rate}">`, `<b id="rateVal">${st.rate}回転</b>`).replace("ヘソへの入賞しやすさ。", "物理盤面がOFFのときのヘソへの入賞しやすさ。");
       body += field("演出スピード", "", seg("settings.speed", SPEED_LABEL, st.speed));
       body += field("自動PUSH", "ONにすると、PUSHや八卦炉レバーの指示をすぐ自動で消化する。OFFでも数秒待てば自動で進む。", seg("settings.autoPush", { off: "OFF", on: "ON" }, st.autoPush));
       body += field("サウンド", "", seg("settings.sound", { on: "ON", off: "OFF" }, st.sound));
@@ -728,6 +842,13 @@
     });
     const rb = $("resetBtn");
     if (rb) rb.addEventListener("click", () => openConfirm());
+    const hr = $("hesoRange");
+    if (hr) hr.addEventListener("input", () => {
+      state.settings.hesoOpen = +hr.value;
+      $("hesoVal").textContent = hr.value;
+      board.setHeso(+hr.value);
+      save();
+    });
     const db = $("devReset");
     if (db) db.addEventListener("click", () => {
       state.dev = { ...DEFAULT_DEV };
@@ -747,6 +868,7 @@
     window.Sound.setBgm(st.bgm === "on");
     renderLog();
     renderStatus();
+    $("boardPanel").hidden = !useBoard();
     const showDrop = state.dev.dropBtn === "on";
     $("dropBtn").hidden = !showDrop;
     document.querySelector(".controls").classList.toggle("has-drop", showDrop);
@@ -824,6 +946,18 @@
         renderMenu();
       }
     });
+    // PCの横長画面では盤面を右の列に置き、台の列（液晶とボタン）が画面に収まるようにする
+    const wide = window.matchMedia("(min-width: 900px)");
+    const placeBoard = () => {
+      const panel = $("boardPanel");
+      if (wide.matches) document.querySelector(".side").prepend(panel);
+      else document.querySelector(".machine").append(panel);
+    };
+    placeBoard();
+    wide.addEventListener ? wide.addEventListener("change", placeBoard) : wide.addListener(placeBoard);
+    $("strength").addEventListener("input", (e) => setStrength(+e.target.value));
+    $("leftShot").addEventListener("click", () => setStrength(40));
+    $("rightShot").addEventListener("click", () => setStrength(80));
     $("dropBtn").addEventListener("click", () => {
       window.Sound.unlock();
       stage.drop("normal");
@@ -879,7 +1013,9 @@
     });
     stage.setMode(state.mode);
     if (state.mode === "rush") window.Sound.setTheme("rush");
+    setupBoard();
     bind();
+    setStrength(state.settings.strength);
     applySettings();
     render();
     window.GensouAssets.init().then(() => stage.refreshArt());

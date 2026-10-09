@@ -175,7 +175,10 @@
 
     // ---------------- リーチの組み立て ----------------
 
-    const TELOP = { white: "まだ終わらせない", red: "ここで決めるわ…！", gold: "異変はここで終わりよ" };
+    const L = D.SERIFU;
+    // セリフ step。char のキャラが話す
+    const serif = (pair, color = "white", inf = null) => ({ t: "serif", char: pair[0], text: pair[1], color, info: inf });
+    const introOf = (reach) => (reach.char && L.intro[reach.char] ? [serif([reach.char, choice(L.intro[reach.char])])] : []);
 
     // リーチ内のチャンスアップ。信頼度はリーチごとに違うので、名前にリーチ名を付けて区別する。
     function subsOf(reach, out) {
@@ -200,10 +203,10 @@
       return steps;
     }
 
-    function colorStep(t, subs, key, text) {
+    function colorStep(t, subs, key, text, pool = L.telop) {
       const s = subs[key];
       const color = s ? s.o.color : "white";
-      return { t, color, text: text || TELOP[color], info: s ? s.info : null };
+      return { t, color, text: text || choice(pool[color] || pool.white), info: s ? s.info : null };
     }
 
     const reachTitle = (reach, color) => ({
@@ -235,39 +238,39 @@
           steps.push({ t: "wait", ms: 1600 });
           break;
         case "chara":
-          steps.push(reachTitle(reach, "white"), colorStep("telop", subs, "telop"));
+          steps.push(reachTitle(reach, "white"), ...introOf(reach), colorStep("telop", subs, "telop"));
           if (subs.drop) steps.push({ t: "hand", sound: "normal", info: subs.drop.info });
           steps.push({ t: "wait", ms: 1000 });
           break;
         case "long":
-          steps.push(reachTitle(reach, "white"), colorStep("telop", subs, "telop"));
+          steps.push(reachTitle(reach, "white"), ...introOf(reach), colorStep("telop", subs, "telop"));
           if (subs.yukari) steps.push({ t: "card", id: "yukariToujou", char: "yukari", title: "紫 登場", text: "あら、面白そうね", color: "purple", info: subs.yukari.info });
           steps.push({ t: "wait", ms: 1300 });
           break;
         case "battle":
-          steps.push({ t: "wait", ms: 700 }, ...drop, reachTitle(reach, subs.title ? subs.title.o.color : "white"), colorStep("telop", subs, "telop"));
+          steps.push({ t: "wait", ms: 700 }, ...drop, reachTitle(reach, subs.title ? subs.title.o.color : "white"), ...introOf(reach), colorStep("telop", subs, "telop"));
           if (subs.lamp) steps.push({ t: "lamp", info: subs.lamp.info });
           if (subs.drop) steps.push({ t: "hand", sound: "normal", info: subs.drop.info });
           if (subs.strong) steps.push({ t: "sakura", id: "strong", text: "強ルートへ", info: subs.strong.info });
           steps.push(...cards, colorStep("cutin", subs, "cutin", `${D.CHARS.reimu.spell}`), ...deviceSteps(subs));
           break;
         case "episode":
-          steps.push(...drop, reachTitle(reach, subs.title ? subs.title.o.color : "white"), colorStep("telop", subs, "telop"));
+          steps.push(...drop, reachTitle(reach, subs.title ? subs.title.o.color : "white"), ...introOf(reach), colorStep("telop", subs, "telop"));
           steps.push(...cards, colorStep("cutin", subs, "cutin", D.CHARS.reimu.spell), ...deviceSteps(subs));
           break;
         case "climax":
           steps.push({ t: "card", id: "hakurei", char: "reimu", title: "博麗の巫女", text: "弾幕クライマックスへ", color: "red", info: null });
-          steps.push(...drop, reachTitle(reach, "red"));
+          steps.push(...drop, reachTitle(reach, "red"), ...introOf(reach));
           steps.push(colorStep("declare", subs, "declare", D.CHARS[reach.char].spell));
-          steps.push(colorStep("telop", subs, "monologue"));
+          steps.push(colorStep("telop", subs, "monologue", null, L.monologue));
           steps.push(...cards, colorStep("cutin", subs, "cutin", "霊符「夢想封印」"), ...deviceSteps(subs));
           break;
         case "revive":
           steps.push({ t: "fakeEnd" }, { t: "sukima", text: "まだ終わりじゃないわ" });
-          steps.push(...drop, reachTitle(reach, "purple"), ...cards, ...deviceSteps(subs));
+          steps.push(...drop, reachTitle(reach, "purple"), ...introOf(reach), ...cards, ...deviceSteps(subs));
           break;
         case "kinki":
-          steps.push(...drop, reachTitle(reach, "red"), ...cards, ...deviceSteps(subs));
+          steps.push(...drop, reachTitle(reach, "red"), ...introOf(reach), ...cards, ...deviceSteps(subs));
           break;
         case "zenkaiten":
           break;
@@ -287,23 +290,23 @@
           steps.push({ t: "wait", ms: 1000 });
           break;
         case "shunkan":
-          steps.push(reachTitle(reach, "red"), ...sp, ...card("kesshin", "霊夢の決意", "一瞬で決める", "red", "reimu"), ...deviceSteps(subs));
+          steps.push(reachTitle(reach, "red"), ...introOf(reach), ...sp, ...card("kesshin", "霊夢の決意", "一瞬で決める", "red", "reimu"), ...deviceSteps(subs));
           break;
         case "danmaku":
-          steps.push(reachTitle(reach, "red"), ...card("music", "楽曲変化", "♪", "gold"), ...sp, ...card("gabure", "画ブレ", "", "red"));
+          steps.push(reachTitle(reach, "red"), ...introOf(reach), ...card("music", "楽曲変化", "♪", "gold"), ...sp, ...card("gabure", "画ブレ", "", "red"));
           steps.push({ t: "card", id: "attack", title: "攻撃", text: subs.attack ? "スペルカード一撃" : "弾幕連打", color: subs.attack ? "red" : "white", info: subs.attack ? subs.attack.info : null });
           steps.push(...deviceSteps(subs));
           break;
         case "kessen":
-          steps.push(reachTitle(reach, subs.title ? "gold" : "red"), ...sp);
+          steps.push(reachTitle(reach, subs.title ? "gold" : "red"), ...introOf(reach), ...sp);
           steps.push({ t: "card", id: "sensei", char: subs.sensei ? "reimu" : "flandre", title: "最終煽り", text: subs.sensei ? "霊夢の先制攻撃" : "フランの先制攻撃", color: subs.sensei ? "gold" : "white", info: subs.sensei ? subs.sensei.info : null });
           steps.push(...deviceSteps(subs));
           break;
         case "kyuushutsu":
-          steps.push(reachTitle(reach, "white"), ...sp, ...card("light", "集光エフェクト", "大", "gold"), ...card("countdown", "カウントダウン", "3・2・1", "gold"), ...deviceSteps(subs));
+          steps.push(reachTitle(reach, "white"), ...introOf(reach), ...sp, ...card("light", "集光エフェクト", "大", "gold"), ...card("countdown", "カウントダウン", "3・2・1", "gold"), ...deviceSteps(subs));
           break;
         case "kimagure":
-          steps.push(reachTitle(reach, "red"), ...sp);
+          steps.push(reachTitle(reach, "red"), ...introOf(reach), ...sp);
           if (subs.sakura) steps.push({ t: "sakura", id: "kimagure", text: "", info: subs.sakura.info });
           steps.push({ t: "card", id: "aura", char: "remilia", title: "最終オーラ", text: subs.aura ? subs.aura.o.label : "紫", color: subs.aura ? subs.aura.o.color : "purple", info: subs.aura ? subs.aura.info : null });
           steps.push(...deviceSteps(subs));
@@ -312,7 +315,7 @@
           steps.push(reachTitle(reach, "red"), ...sp, ...card("allHit", "提示図柄", "全て大当り図柄", "gold"), colorStep("cutin", subs, "cutin", D.CHARS.reimu.spell), ...deviceSteps(subs));
           break;
         case "sukima":
-          steps.push(reachTitle(reach, "purple"), ...sp, ...deviceSteps(subs));
+          steps.push(reachTitle(reach, "purple"), ...introOf(reach), ...sp, ...deviceSteps(subs));
           break;
         case "zenkaiten":
           break;
@@ -326,7 +329,7 @@
       if (steps.some((s) => s.t === "fakeEnd")) return [];
       const o = pickCtx(group, out);
       if (!o) return [];
-      return [{ t: "revive", id: o.id, hit: out.hit, stopAt: out.hit ? null : digits[1], info: info(group, o) }];
+      return [{ t: "revive", id: o.id, hit: out.hit, stopAt: out.hit ? null : digits[1], line: choice(L.revive[o.id] || L.revive.aori), info: info(group, o) }];
     }
 
     // ---------------- 通常時シナリオ ----------------
@@ -359,6 +362,11 @@
           case "mono": steps.push({ t: "mono", color: o.color, info: i }); break;
           case "haikei": steps.push({ t: "bg", bg: o.bg, info: i }); break;
           case "hand": steps.push({ t: "hand", sound: o.sound, info: i }); break;
+          case "kaiwa": {
+            const [a, b] = choice(L.kaiwa[o.color] || L.kaiwa.white);
+            steps.push(serif(a, "white", i), serif(b, o.color));
+            break;
+          }
           default: steps.push({ t: "card", id: g.id, title: g.name, text: o.label, color: o.color, info: i });
         }
       }
@@ -372,7 +380,7 @@
           const i = info(g, o);
           if (g.id === "cirno") steps.push({ t: "cirno", color: o.color, info: i });
           else if (g.id === "zone") steps.push({ t: "zone", device: o.device, info: i });
-          else steps.push({ t: "card", id: g.id, char: o.id === "marisa" ? "marisa" : null, title: g.name, text: o.id === "marisa" ? "霊夢なら大丈夫だぜ！" : "がんばれー！", color: o.color, info: i });
+          else steps.push(serif(choice(o.id === "marisa" ? L.seien.marisa : L.seien.general), o.color, i));
         }
       }
 
@@ -381,7 +389,7 @@
         const d = hitDigit(result, reach);
         digits = [d, d, d];
       } else if (result.kind === "charge") {
-        digits = missDigits(null);
+        digits = missDigits(reach); // リーチ後にチャージで止まることもある
         digits[1] = "C";
       } else {
         digits = missDigits(reach);
@@ -462,24 +470,25 @@
           steps.push({ t: "hand", sound: "low", notice: "夢想封印MAX", info: { group: "BONUS中", label: "夢想封印MAX（6000）", rel: 1 } });
           steps.push({ t: "bonus", title: "夢想封印MAX", sub: "6000", rounds: 20, payout: S.payout.rush6000 - S.payout.rush3000 });
         }
-        steps.push({ t: "rushContinue" });
+        steps.push({ t: "rushContinue" }, serif(choice(L.rushContinue)));
         return steps;
       }
       if (result.kind === "charge") {
-        steps.push({ t: "charge", payout: S.payout.charge2R, promote: result.rush });
+        steps.push({ t: "charge", payout: S.payout.charge2R, promote: result.rush }, serif(choice(result.rush ? L.promote : L.charge)));
         return steps;
       }
 
       const uo = pick(D.BONUS_URA, { hit: result.rush, rush: result.rush }, P.bonus, 1);
       const ura = uo ? { color: uo.color, info: info(D.BONUS_URA, uo) } : { color: "white", info: null };
-      steps.push({ t: "bonus", title: "異変解決BONUS", sub: "10R", rounds: 10, payout: S.payout.bonus10R, ura });
+      steps.push({ t: "bonus", title: "異変解決BONUS", sub: "10R", rounds: 10, payout: S.payout.bonus10R, ura }, serif(choice(L.bonus)));
 
       if (digits[0] === 7) {
-        steps.push({ t: "rushResult", success: true, text: "霊夢図柄 RUSH確定" });
+        steps.push({ t: "rushResult", success: true, text: "霊夢図柄 RUSH確定" }, serif(choice(L.rushIn), "gold"));
       } else if ((custom.challenge || "koumakan") === "koumakan") {
-        const serif = result.rush && rng() < 0.2;
-        steps.push({ t: "challenge", kind: "koumakan", serif, device: result.rush && rng() < 0.15 ? "lever" : "button" });
-        steps.push({ t: "rushResult", success: result.rush });
+        const reimuLine = result.rush && rng() < 0.2;
+        steps.push(serif(choice(L.koumakan), "red"));
+        steps.push({ t: "challenge", kind: "koumakan", serif: reimuLine, device: result.rush && rng() < 0.15 ? "lever" : "button" });
+        steps.push({ t: "rushResult", success: result.rush }, serif(choice(result.rush ? L.rushIn : L.rushFail), result.rush ? "gold" : "white"));
       } else {
         let at = null;
         if (result.rush) {
@@ -487,7 +496,7 @@
           at = r < 0.55 ? 2 + rand(32) : r < 0.75 ? 1 : r < 0.92 ? 0 : -1; // -1 は失敗後の復活
         }
         steps.push({ t: "challenge", kind: "ippatsu", at });
-        steps.push({ t: "rushResult", success: result.rush });
+        steps.push({ t: "rushResult", success: result.rush }, serif(choice(result.rush ? L.rushIn : L.rushFail), result.rush ? "gold" : "white"));
       }
       return steps;
     }

@@ -756,3 +756,35 @@ button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px s
 .controls.has-drop { grid-template-columns: 1.15fr 1fr 1fr 0.8fr; }
 .ctl.drop { background: radial-gradient(circle at 50% 35%, #ffffff, #f0d9dc 45%, #c22a3a); border-color: #ffd0d6; color: #3a0610; }
 .ctl.drop small { color: #5a1420; }
+
+/* セリフ枠 */
+.serif {
+  left: 3%;
+  right: 3%;
+  top: 60%;
+  z-index: 7;
+  display: grid;
+  grid-template-columns: 15% minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+  padding: 8px 10px;
+  border-radius: 12px;
+  background: rgba(8, 6, 18, 0.96);
+  border: 1px solid var(--tone, rgba(255, 255, 255, 0.4));
+  box-shadow: 0 0 14px rgba(0, 0, 0, 0.6);
+  animation: serifIn 0.2s ease-out both;
+}
+.serif .face svg, .serif .face img { width: 100%; }
+.serif .who { font-size: 11px; font-weight: 700; letter-spacing: 0.06em; }
+.serif .txt { font-family: var(--font-display); font-size: clamp(15px, 4.6vw, 19px); line-height: 1.35; color: var(--tone, #fff); min-height: 1.35em; }
+@keyframes serifIn { from { transform: translateY(20%); opacity: 0; } }
+
+/* 物理盤面 */
+.board-panel { position: relative; display: grid; gap: 6px; background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 8px; }
+.board { width: 100%; aspect-ratio: 300 / 240; display: block; border-radius: 10px; max-width: 100%; }
+.stroke { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 8px; align-items: center; }
+.stroke button { font-size: 13px; padding: 8px 10px; }
+.stroke-range { display: grid; gap: 2px; font-size: 11px; color: var(--muted); }
+.stroke-range b { color: var(--ink); font-variant-numeric: tabular-nums; }
+.stroke-range input { width: 100%; accent-color: var(--gold); }
+.shot-hint { position: absolute; left: 50%; top: 8px; transform: translateX(-50%); padding: 4px 12px; border-radius: 99px; background: var(--shu); color: #fff; font-weight: 700; font-size: 13px; animation: pulse 0.5s ease-in-out infinite alternate; white-space: nowrap; }

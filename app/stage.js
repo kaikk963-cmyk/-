@@ -565,7 +565,7 @@
       for (const n of persist) n.remove();
       persist = [];
       layer.innerHTML = "";
-      stage.querySelectorAll(".telop, .edge").forEach((n) => n.remove());
+      stage.querySelectorAll(".telop, .edge, .serif").forEach((n) => n.remove());
       stage.classList.remove("mono", "freeze");
       yinyang.classList.remove("lamp");
       sakura.classList.remove("bloom");
@@ -655,6 +655,26 @@
           layer.querySelectorAll(".sukima").forEach((n) => n.remove());
           reels.spinAll();
         }
+      },
+      // キャラのセリフ（下側のセリフ枠に1文字ずつ出す）
+      async serif(st) {
+        stage.querySelectorAll(".serif").forEach((n) => n.remove());
+        const c = D.CHARS[st.char];
+        const box = h("div", `serif ${tone(st.color)}`, `${crest(st.char, "crest face")}<div class="body"><div class="who" style="color:${c ? c.color : "#fff"}">${c ? c.name : ""}</div><div class="txt"></div></div>`);
+        stage.append(box);
+        const txt = box.querySelector(".txt");
+        const chars = [...st.text];
+        let i = 0;
+        const timer = setInterval(() => {
+          i += 1;
+          txt.textContent = chars.slice(0, i).join("");
+          if (i >= chars.length) clearInterval(timer);
+        }, 38 * speed);
+        if (st.color !== "white") sfx("card", st.color);
+        else sfx("tick");
+        await wait(700 + chars.length * 60);
+        clearInterval(timer);
+        box.remove();
       },
       async card(st) {
         const main = st.text || st.title;
@@ -1080,7 +1100,7 @@
         fx.setMode("idle");
         await wait(1200);
         if (st.id === "aori") {
-          const n = add(h("div", "card tone-purple", `<div class="t">……</div><div class="m">まだ、終わってない？</div>`));
+          const n = add(h("div", "card tone-purple", `${crest(st.line ? st.line[0] : "reimu")}<div class="t">……</div><div class="m">${st.line ? st.line[1] : "まだ、終わってない？"}</div>`));
           sfx("gap");
           await wait(500);
           await waitInput("button", { autoMs: 2400 });
@@ -1094,10 +1114,15 @@
         } else if (st.id === "drop") {
           await wait(250);
           dropYinyang("high");
+          if (st.line) {
+            const c = add(h("div", "card tone-red", `${crest(st.line[0])}<div class="m">${st.line[1]}</div>`));
+            c.style.top = "62%";
+            setTimeout(() => c.remove(), 1000 * speed);
+          }
           await wait(700);
         } else {
           add(h("div", "sukima", `<i class="ribbon" style="left:12%"></i><i class="ribbon" style="right:12%"></i>`));
-          const c = add(h("div", "card tone-purple", `${crest("yukari")}<div class="t">紫</div><div class="m">まだ終わらせないわ</div>`));
+          const c = add(h("div", "card tone-purple", `${crest("yukari")}<div class="t">紫</div><div class="m">${st.line ? st.line[1] : "まだ終わらせないわ"}</div>`));
           c.style.top = "62%";
           sfx("gap");
           await wait(1300);

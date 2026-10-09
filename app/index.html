@@ -46,6 +46,17 @@
           <small>投下</small>
         </button>
       </div>
+
+      <div class="board-panel" id="boardPanel">
+        <canvas id="board" class="board" aria-label="盤面"></canvas>
+        <div class="stroke">
+          <button type="button" id="leftShot">左打ち</button>
+          <label class="stroke-range"><span>ハンドル <b id="strengthVal">40</b></span>
+            <input id="strength" type="range" min="0" max="100" step="1" value="40" aria-label="ハンドルの強さ"></label>
+          <button type="button" id="rightShot">右打ち</button>
+        </div>
+        <div class="shot-hint" id="shotHint" hidden></div>
+      </div>
     </div>
 
     <div class="side">
@@ -112,6 +123,7 @@
   <script src="engine.js"></script>
   <script src="sound.js"></script>
   <script src="assets.js"></script>
+  <script src="board.js"></script>
   <script src="stage.js"></script>
   <script src="app.js"></script>
 </body>

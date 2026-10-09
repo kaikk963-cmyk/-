@@ -1,6 +1,6 @@
 // オフラインでも遊べるようにアプリ本体をキャッシュする。ファイルを更新したら VERSION を上げる。
-const VERSION = "gensou-v2";
-const FILES = ["./", "index.html", "style.css", "data.js", "engine.js", "sound.js", "assets.js", "stage.js", "app.js", "manifest.json", "icon.svg", "icon-192.png", "icon-512.png"];
+const VERSION = "gensou-v3";
+const FILES = ["./", "index.html", "style.css", "data.js", "engine.js", "sound.js", "assets.js", "board.js", "stage.js", "app.js", "manifest.json", "icon.svg", "icon-192.png", "icon-512.png"];
 
 self.addEventListener("install", (e) => {
   e.waitUntil(caches.open(VERSION).then((c) => c.addAll(FILES)));

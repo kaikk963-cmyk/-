@@ -43,11 +43,17 @@ await page.click("#menuClose");
 await page.click("#handleBtn");
 
 const read = () => page.evaluate((k) => JSON.parse(localStorage.getItem(k) || "null"), STATE_KEY);
-let shotReach = false, shotRush = false;
+let shotReach = false, shotRush = false, lastRight = false;
 const t0 = Date.now();
 while (Date.now() - t0 < 240000) {
-  await page.waitForTimeout(400);
+  await page.waitForTimeout(300);
   const s = await read();
+  // 物理盤面：通常時は左打ち、RUSH・BONUS中は右打ち
+  const needRight = s && (s.mode === "rush" || (await page.$(".bonus-screen")));
+  if (needRight !== lastRight) {
+    await page.click(needRight ? "#rightShot" : "#leftShot");
+    lastRight = needRight;
+  }
   if (!shotReach && (await page.$(".reach-title"))) {
     await page.screenshot({ path: path.join(out, "03-reach.png") });
     shotReach = true;
@@ -83,6 +89,8 @@ const covered = await page.evaluate(async () => {
     { t: "renda", n: 5, hit: true }, { t: "wait", ms: 10 },
     { t: "revive", id: "aori", hit: false, stopAt: 4 }, { t: "revive", id: "drop", hit: true, stopAt: null },
     { t: "revive", id: "sukima", hit: true, stopAt: null }, { t: "revive", id: "aori", hit: true, stopAt: null },
+    { t: "serif", char: "remilia", text: "こんなに紅い夜だもの", color: "red" }, { t: "serif", char: "reimu", text: "異変は、ここで終わりよ！", color: "gold" },
+    { t: "revive", id: "sukima", hit: true, stopAt: null, line: ["yukari", "まだ終わらせないわ"] },
     { t: "final", digits: d, hit: false, charge: false },
     { t: "zenkaiten" }, { t: "final", digits: [7, 7, 7], hit: true, charge: false },
     { t: "bonus", title: "異変解決BONUS", sub: "10R", rounds: 10, payout: 1400, ura: { color: "red", info: null } },
