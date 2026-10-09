@@ -47,7 +47,18 @@
     </svg>`;
   }
 
-  const crest = (key, cls = "crest") => (key ? `<span class="${cls}">${crestSVG(key)}</span>` : "");
+  // 取り込んだ立ち絵があればそれを、なければ紋を使う
+  const art = (key) => (root.GensouAssets && key ? root.GensouAssets.url(`chara:${key}`) : null);
+  const crest = (key, cls = "crest") => {
+    if (!key) return "";
+    const u = art(key);
+    return u ? `<span class="${cls} portrait"><img src="${u}" alt=""></span>` : `<span class="${cls}">${crestSVG(key)}</span>`;
+  };
+  function bigArt(key) {
+    const u = art(key);
+    if (!u) return h("div", "big-crest", crestSVG(key));
+    return h("div", "tachie", `<img src="${u}" alt="">`);
+  }
 
   // ---------------- 弾幕エフェクト（canvas） ----------------
 
@@ -205,7 +216,9 @@
   function cellHTML(d) {
     const key = D.DIGIT_CHARS[d];
     const c = D.CHARS[key];
-    return `<div class="cell" style="--cc:${c.color}">${crest(key)}<div class="num">${d}</div><div class="name">${c.short}</div></div>`;
+    const u = art(key);
+    const back = u ? `<img class="cell-art" src="${u}" alt="">` : crest(key);
+    return `<div class="cell" style="--cc:${c.color}">${back}<div class="num">${d}</div><div class="name">${c.short}</div></div>`;
   }
 
   class Reels {
@@ -228,6 +241,11 @@
       this.measure();
       root.ownerDocument.defaultView.addEventListener("resize", () => this.measure());
       this.digits.forEach((d, i) => this.place(i, d, false));
+    }
+    // 立ち絵を差し替えたときに図柄を作り直す
+    refresh() {
+      const stripHTML = [...CELLS, ...CELLS, ...CELLS].map(cellHTML).join("");
+      for (const r of this.reels) r.strip.innerHTML = stripHTML;
     }
     measure() {
       const r = this.reels[0].reel.getBoundingClientRect();
@@ -363,7 +381,9 @@
 
     function setBg(tone) {
       bg.className = `bg ${tone}`;
-      bg.innerHTML = BG_ART[tone] || "";
+      const u = root.GensouAssets && root.GensouAssets.url(`bg:${tone}`);
+      bg.style.backgroundImage = u ? `linear-gradient(rgba(10,8,22,.25), rgba(10,8,22,.45)), url("${u}")` : "";
+      bg.innerHTML = u ? "" : BG_ART[tone] || "";
       fx.tone = tone;
     }
 
@@ -773,8 +793,8 @@
       async reach(st) {
         const color = TONE_COLOR[st.color] || "#fff";
         fx.setMode("reach", st.char ? D.CHARS[st.char].color : color);
-        layer.querySelectorAll(".reach-title, .big-crest").forEach((n) => n.remove());
-        if (st.char) add(h("div", "big-crest", crestSVG(st.char)), true);
+        layer.querySelectorAll(".reach-title, .big-crest, .tachie").forEach((n) => n.remove());
+        if (st.char) add(bigArt(st.char), true);
         const kind = st.kind === "normal" ? "" : st.label.split(" ")[0];
         const main = st.label.includes(" ") ? st.label.slice(st.label.indexOf(" ") + 1) : st.label;
         add(h("div", `reach-title ${tone(st.color)}`, `<div class="k">${kind}</div><div class="m">${main}</div>`), true);
@@ -860,7 +880,7 @@
         n.remove();
       },
       async notice(st) {
-        if (st.char) add(h("div", "big-crest", crestSVG(st.char)));
+        if (st.char) add(bigArt(st.char));
         const n = add(h("div", "notice tone-gold", st.text));
         flash("gold");
         sfx("notice");
@@ -1049,6 +1069,50 @@
         await wait(1100);
         n.remove();
       },
+      // SPリーチがハズレで止まったあとの復活
+      async revive(st) {
+        const d = reels.digits[0];
+        reels.stop(1, st.stopAt != null ? st.stopAt : (d % 9) + 1);
+        sfx("fail");
+        q(".reels").classList.add("dim");
+        stage.querySelectorAll(".telop").forEach((n) => n.remove());
+        layer.querySelectorAll(".reach-title, .big-crest, .tachie").forEach((n) => n.remove());
+        fx.setMode("idle");
+        await wait(1200);
+        if (st.id === "aori") {
+          const n = add(h("div", "card tone-purple", `<div class="t">……</div><div class="m">まだ、終わってない？</div>`));
+          sfx("gap");
+          await wait(500);
+          await waitInput("button", { autoMs: 2400 });
+          n.remove();
+          if (!st.hit) {
+            sfx("fail");
+            await wait(500);
+            q(".reels").classList.remove("dim");
+            return;
+          }
+        } else if (st.id === "drop") {
+          await wait(250);
+          dropYinyang("high");
+          await wait(700);
+        } else {
+          add(h("div", "sukima", `<i class="ribbon" style="left:12%"></i><i class="ribbon" style="right:12%"></i>`));
+          const c = add(h("div", "card tone-purple", `${crest("yukari")}<div class="t">紫</div><div class="m">まだ終わらせないわ</div>`));
+          c.style.top = "62%";
+          sfx("gap");
+          await wait(1300);
+          layer.querySelectorAll(".sukima").forEach((x) => x.remove());
+          c.remove();
+        }
+        q(".reels").classList.remove("dim");
+        flash();
+        const n = add(h("div", "notice tone-rainbow", `<div class="rainbow-text">復活</div>`));
+        reels.spin(1, true);
+        sfx("notice");
+        handlers.onVibrate && handlers.onVibrate([200, 80, 200]);
+        await wait(1300);
+        n.remove();
+      },
       async rushEnd(st) {
         const n = add(h("div", "card tone-white", `<div class="t">弾幕RUSH 終了</div><div class="m">${st.chain}連 ${st.balls.toLocaleString("ja-JP")}発</div>`));
         sfx("fail");
@@ -1086,6 +1150,17 @@
 
     return {
       play, setMode, setStatus, renderHolds, entry, input, overlay, clearSpin,
+      // 立ち絵・背景の差し替えを反映する
+      refreshArt() {
+        reels.refresh();
+        reels.digits.forEach((d, i) => reels.place(i, d, false));
+        setBg(bg.classList[1] || baseTone);
+      },
+      // 開発者用：陰陽玉を今すぐ落とす（演出のみで抽選には関係しない）
+      drop(kind = "normal", weak = false) {
+        dropYinyang(kind, { weak });
+        if (!weak) flash();
+      },
       setSpeed(v) { speed = v; },
       setAutoPush(v) { autoPush = v; },
       isWaiting: () => !!pending,

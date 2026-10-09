@@ -11,7 +11,7 @@
   const DEFAULT_SETTINGS = { rate: 18, speed: "normal", autoPush: "off", sound: "on", bgm: "off", volume: 0.7, vibe: "on", showRel: "on" };
   const SPEEDS = { slow: 1.35, normal: 1, fast: 0.5, turbo: 0.2 };
   const SPEED_LABEL = { slow: "ゆっくり", normal: "標準", fast: "高速", turbo: "爆速" };
-  const DEFAULT_DEV = { overrides: {}, force: "none", senbare: "off", rush6000: null };
+  const DEFAULT_DEV = { overrides: {}, force: "none", senbare: "off", rush6000: null, dropBtn: "off" };
 
   function fresh(custom, settings, dev) {
     return {
@@ -349,6 +349,8 @@
     list.push({ key: "hand", title: "陰陽玉落下（変動中）", group: D.NORMAL_YOKOKU.find((g) => g.id === "hand"), p: P.spin, unit: "回転" });
     list.push({ key: "sakura", title: "西行妖 開花予告（陰陽玉弱落下）", group: D.NORMAL_YOKOKU.find((g) => g.id === "sakura"), p: P.spin, unit: "回転" });
     list.push({ key: "spDrop", title: "SP発展時の陰陽玉落下", group: D.NORMAL_SP_YOKOKU.find((g) => g.id === "spDrop"), p: P.sp, unit: "SPリーチ" });
+    list.push({ key: "revive", title: "復活演出", group: D.NORMAL_REVIVE, p: P.sp, unit: "SPリーチ" });
+    list.push({ key: "reviveRush", title: "復活演出（RUSH中）", group: D.RUSH_REVIVE, p: P.rushSp, unit: "SPリーチ" });
     const seen = new Set();
     for (const r of [...D.NORMAL_REACH.options, ...D.RUSH_REACH.options]) {
       for (const g of r.subs || []) {
@@ -423,6 +425,9 @@
       seg("dev.force", { none: "なし", rushHit: "大当り→RUSH", hit: "大当り→通常", charge: "チャージ", miss: "ハズレ" }, state.dev.force));
     body += field("先バレを強制", "保留入賞時に陰陽玉を必ず落とす（先バレのカスタムがOFFでも落ちる）。",
       seg("dev.senbare", { off: "OFF", once: "次の1回", always: "毎回" }, state.dev.senbare));
+    body += field("陰陽玉を今すぐ落とす", "役物を落とす演出だけを出す。抽選結果には関係しない。当たりにしたいときは「次の入賞を固定」と組み合わせる。",
+      `<div class="drop-btns"><button type="button" data-drop="normal">通常音</button><button type="button" data-drop="low">低音</button><button type="button" data-drop="high">高音</button><button type="button" data-drop="weak">弱落下</button></div>`);
+    body += field("メイン画面に落下ボタン", "PUSHとレバーの横に「役物投下」ボタンを出す。", seg("dev.dropBtn", { off: "OFF", on: "ON" }, state.dev.dropBtn));
     for (const d of devGroups()) {
       const changed = d.group.options.some((o) => state.dev.overrides[devKey(d, o)]);
       const rows = d.group.options.map((o) => {
@@ -443,6 +448,40 @@
       `<input class="num-in wide" type="number" inputmode="decimal" min="0" max="100" step="0.5" data-dev="rush6000" value="${+(big * 100).toFixed(2)}" aria-label="6000発の割合（%）">`, `<b>${+(big * 100).toFixed(1)}%</b>`);
     body += `<div class="field"><button type="button" class="btn-danger" id="devReset">すべて元の値に戻す</button></div>`;
     return body;
+  }
+
+  // ---------------- 立ち絵・背景の取り込み ----------------
+
+  function artSlots() {
+    const slots = Object.entries(D.CHARS).map(([k, c]) => {
+      const d = D.DIGIT_CHARS.indexOf(k);
+      return { key: `chara:${k}`, char: k, name: c.name, sub: d > 0 ? `図柄${d}・リーチ・カットイン` : "リーチ・予告" };
+    });
+    for (const [k, v] of Object.entries(D.STAGES)) slots.push({ key: `bg:${k}`, name: `背景：${v.name}`, sub: k === "shrine" ? "通常時" : "背景移行" });
+    return slots;
+  }
+
+  function renderArt() {
+    const A = window.GensouAssets;
+    let body = `<p class="note">キャラの立ち絵や背景を、この端末の画像から取り込めます。取り込んだ画像はこのブラウザの中だけに保存され、ほかの人には見えません。<br><b>フリー素材でも、使う前に各素材の利用規約を確認してください。</b>クレジット表記が必要なもの、再配布が禁止のもの、ギャンブル・パチンコ系での使用を禁止しているものがあります。立ち絵は背景が透過したPNGがきれいに出ます。</p>`;
+    if (!A.persistent()) body += `<p class="warn">この環境では画像を保存できないため、ページを閉じると取り込んだ画像は消えます。</p>`;
+    body += artSlots().map((sl) => {
+      const u = A.url(sl.key);
+      const thumb = u ? `<img src="${u}" alt="">` : sl.char ? window.GensouStage.crestSVG(sl.char) : "";
+      return `<div class="asset-row"><div class="thumb">${thumb}</div>
+        <div class="name">${sl.name}<small>${sl.sub}</small></div>
+        <div class="acts"><label class="btn">${u ? "変更" : "画像を選ぶ"}<input type="file" accept="image/*" data-asset="${sl.key}" aria-label="${sl.name}の画像"></label>
+        ${u ? `<button type="button" data-asset-del="${sl.key}" aria-label="${sl.name}の画像を削除">削除</button>` : ""}</div></div>`;
+    }).join("");
+    return body;
+  }
+
+  async function onArtFile(el) {
+    const file = el.files && el.files[0];
+    if (!file) return;
+    await window.GensouAssets.put(el.dataset.asset, file);
+    stage.refreshArt();
+    renderMenu();
   }
 
   function onDevInput(el) {
@@ -637,6 +676,8 @@
       body += field("信頼度を表示", "出た演出と信頼度を「演出ログ」に表示する。", seg("settings.showRel", { on: "ON", off: "OFF" }, st.showRel));
     } else if (tab === "dev") {
       body = renderDev();
+    } else if (tab === "art") {
+      body = renderArt();
     } else if (tab === "spec") {
       const cont = 1 - Math.pow(1 - S.rushProb, S.stSpins);
       body = `<div class="table-wrap"><table class="spec"><tbody>
@@ -706,6 +747,9 @@
     window.Sound.setBgm(st.bgm === "on");
     renderLog();
     renderStatus();
+    const showDrop = state.dev.dropBtn === "on";
+    $("dropBtn").hidden = !showDrop;
+    document.querySelector(".controls").classList.toggle("has-drop", showDrop);
   }
 
   function openMenu() {
@@ -764,6 +808,25 @@
     });
     $("menu").addEventListener("change", (e) => {
       if (e.target.matches("[data-dev]")) onDevInput(e.target);
+      else if (e.target.matches("[data-asset]")) onArtFile(e.target);
+    });
+    $("menu").addEventListener("click", async (e) => {
+      const drop = e.target.closest("[data-drop]");
+      if (drop) {
+        window.Sound.unlock();
+        const k = drop.dataset.drop;
+        stage.drop(k === "weak" ? "normal" : k, k === "weak");
+      }
+      const del = e.target.closest("[data-asset-del]");
+      if (del) {
+        await window.GensouAssets.remove(del.dataset.assetDel);
+        stage.refreshArt();
+        renderMenu();
+      }
+    });
+    $("dropBtn").addEventListener("click", () => {
+      window.Sound.unlock();
+      stage.drop("normal");
     });
     $("menuTabs").addEventListener("click", (e) => {
       const b = e.target.closest("[data-tab]");
@@ -819,6 +882,7 @@
     bind();
     applySettings();
     render();
+    window.GensouAssets.init().then(() => stage.refreshArt());
     if (state.completed) showComplete();
     else if (!started) stage.overlay(`<div class="t">e東方幻想弾幕録</div><div class="m">打ち出しで開始</div>`, "card tone-gold start-hint").style.cssText = "left:10%;right:10%;top:62%;z-index:7;pointer-events:none";
     requestAnimationFrame(() => renderGraph());

@@ -80,7 +80,10 @@ const covered = await page.evaluate(async () => {
     { t: "hand", sound: "normal", timing: "veryEarly" }, { t: "cutin", color: "rainbow", text: "霊符「夢想封印」" },
     { t: "device", device: "lever", handAt: "deviceOperate" }, { t: "fakeEnd" }, { t: "sukima", text: "まだよ" },
     { t: "bundan", n: 4 }, { t: "spellMoji", word: "夢想天生", color: "gold" }, { t: "notice", text: "フラン襲来", char: "flandre" },
-    { t: "renda", n: 5, hit: true }, { t: "wait", ms: 10 }, { t: "final", digits: d, hit: false, charge: false },
+    { t: "renda", n: 5, hit: true }, { t: "wait", ms: 10 },
+    { t: "revive", id: "aori", hit: false, stopAt: 4 }, { t: "revive", id: "drop", hit: true, stopAt: null },
+    { t: "revive", id: "sukima", hit: true, stopAt: null }, { t: "revive", id: "aori", hit: true, stopAt: null },
+    { t: "final", digits: d, hit: false, charge: false },
     { t: "zenkaiten" }, { t: "final", digits: [7, 7, 7], hit: true, charge: false },
     { t: "bonus", title: "異変解決BONUS", sub: "10R", rounds: 10, payout: 1400, ura: { color: "red", info: null } },
     { t: "challenge", kind: "koumakan", serif: true, device: "lever" }, { t: "challenge", kind: "ippatsu", at: -1 },
@@ -93,6 +96,16 @@ const covered = await page.evaluate(async () => {
   return steps.length;
 });
 console.log("全ステップ再生:", covered);
+
+// 立ち絵の取り込み（アイコン画像を霊夢の立ち絵として入れてみる）
+await page.click("#menuBtn");
+await page.click('#menuTabs [data-tab="art"]');
+await page.setInputFiles('[data-asset="chara:reimu"]', path.join(appDir, "icon-512.png"));
+await page.waitForSelector('[data-asset-del="chara:reimu"]', { timeout: 5000 });
+await page.click("#menuClose");
+const artInReels = await page.$$eval(".cell-art", (n) => n.length);
+console.log("立ち絵が入った図柄セル:", artInReels);
+await page.screenshot({ path: path.join(out, "07-art.png") });
 await page.screenshot({ path: path.join(out, "06-steps.png") });
 
 const s = await read();

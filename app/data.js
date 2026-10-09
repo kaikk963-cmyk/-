@@ -351,6 +351,17 @@
     ]),
   ];
 
+  // 復活演出（SPリーチがいったんハズレで止まったあと）。煽りは失敗することもある。
+  const NORMAL_REVIVE = group("revive", "復活演出", "sp", [
+    opt("aori", "復活煽り", 0.3, 0.06),
+    opt("drop", "陰陽玉落下で即復活", 1, 0.04),
+    opt("sukima", "スキマから復活", 1, 0.03),
+  ]);
+  const RUSH_REVIVE = group("reviveRush", "復活演出（RUSH）", "rushSp", [
+    opt("aori", "復活煽り", 0.45, 0.08),
+    opt("drop", "陰陽玉落下で即復活", 1, 0.05),
+  ]);
+
   const RUSH_SP_YOKOKU = [
     group("akame", "紅い瞳煽り", "rushSp", [
       opt("on", "紅い瞳発動", 0.86, 0.5, { color: "red" }),
@@ -449,6 +460,7 @@
     SPEC, CHARS, DIGIT_CHARS, STAGES, CUSTOMS,
     SENBARE, URA_BUTTON_RATE, LEVER_BURU, IMPACT, SAKIYOMI_MIN_REL,
     NORMAL_HOLD, NORMAL_PREREAD, NORMAL_YOKOKU, NORMAL_PRE_REACH, NORMAL_SP_YOKOKU, NORMAL_REACH, KYOUKI_FAIL,
+    NORMAL_REVIVE, RUSH_REVIVE,
     RUSH_HOLD, RUSH_PREREAD, RUSH_YOKOKU, RUSH_SP_YOKOKU, RUSH_REACH, RUSH_MODES, RENDA,
     CHALLENGES, BONUS_URA,
   };

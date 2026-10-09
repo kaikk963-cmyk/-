@@ -320,6 +320,15 @@
       return steps;
     }
 
+    // 復活演出。紫SP（もともと復活型）・全回転・即救済がすでにあるときは出さない。
+    function reviveSteps(group, reach, out, digits, steps) {
+      if (!reach.sp || reach.kind === "revive" || reach.kind === "zenkaiten") return [];
+      if (steps.some((s) => s.t === "fakeEnd")) return [];
+      const o = pickCtx(group, out);
+      if (!o) return [];
+      return [{ t: "revive", id: o.id, hit: out.hit, stopAt: out.hit ? null : digits[1], info: info(group, o) }];
+    }
+
     // ---------------- 通常時シナリオ ----------------
 
     function normalScenario(hold, custom) {
@@ -387,7 +396,10 @@
 
       if (reach && reach.kind === "zenkaiten") steps.push({ t: "zenkaiten", info: { group: "リーチ", label: "全回転", rel: 1 } });
       else steps.push({ t: "reels", digits, reach: !!reach });
-      if (reach) steps.push(...normalReachSteps(reach, out));
+      if (reach) {
+        steps.push(...normalReachSteps(reach, out));
+        steps.push(...reviveSteps(D.NORMAL_REVIVE, reach, out, digits, steps));
+      }
       steps.push({ t: "final", digits, hit: out.hit, charge: result.kind === "charge" });
       return { steps, reach, digits };
     }
@@ -432,7 +444,10 @@
       }
       if (reach && reach.kind === "zenkaiten") steps.push({ t: "zenkaiten", info: { group: "リーチ", label: "全回転", rel: 1 } });
       else steps.push({ t: "reels", digits, reach: !!reach, quick: mode !== "default" });
-      if (reach) steps.push(...rushReachSteps(reach, out));
+      if (reach) {
+        steps.push(...rushReachSteps(reach, out));
+        steps.push(...reviveSteps(D.RUSH_REVIVE, reach, out, digits, steps));
+      }
       steps.push({ t: "final", digits, hit: out.hit, charge: false });
       return { steps, reach, digits };
     }
