@@ -88,9 +88,21 @@
     let holdSeq = 0;
 
     // 入賞時に当否と、保留の見た目・先読み・先バレを決める
-    function makeHold(mode, custom) {
+    // force は開発者モード用： { kind: "rushHit"|"hit"|"charge"|"miss", senbare: true }
+    const FORCED = {
+      rushHit: () => ({ kind: "hit", rush: true, big: rng() < S.rush6000Rate }),
+      hit: () => ({ kind: "hit", rush: false, big: false }),
+      charge: () => ({ kind: "charge", rush: false }),
+      miss: () => ({ kind: "miss", rush: false }),
+    };
+
+    function makeHold(mode, custom, force = null) {
       const rush = mode === "rush";
-      const result = rush ? drawRush() : drawNormal();
+      let result = rush ? drawRush() : drawNormal();
+      if (force && FORCED[force.kind]) {
+        result = FORCED[force.kind]();
+        if (rush && result.kind !== "miss") result = { kind: "hit", rush: true, big: rng() < S.rush6000Rate };
+      }
       const out = rush ? { hit: result.kind === "hit", rush: true } : outOf(result);
       const hold = {
         id: ++holdSeq, mode, result,
@@ -124,6 +136,13 @@
           hold.senbare = { sound: s.sound, info: { group: `${g.name}（${D.CUSTOMS.senbare.choices[custom.senbare]}）`, label: s.label, rel: s.rel } };
           hold.ura = result.kind === "hit" && result.rush && rng() < D.URA_BUTTON_RATE;
         }
+      }
+
+      if (!rush && force && force.senbare && !hold.senbare) {
+        const g = D.SENBARE[custom.senbare] || D.SENBARE.s40;
+        const s = out.hit ? pick(g, out, P.spin, S.hitRushRate) || g.options[0] : g.options[0];
+        hold.senbare = { sound: s.sound, info: { group: `${g.name}（強制）`, label: s.label, rel: s.rel } };
+        hold.ura = result.kind === "hit" && result.rush && rng() < D.URA_BUTTON_RATE;
       }
 
       if (rush && custom.rushMode === "shurai" && out.hit && rng() < 0.6) hold.notice = true;

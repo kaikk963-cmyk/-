@@ -11,8 +11,9 @@
   const DEFAULT_SETTINGS = { rate: 18, speed: "normal", autoPush: "off", sound: "on", bgm: "off", volume: 0.7, vibe: "on", showRel: "on" };
   const SPEEDS = { slow: 1.35, normal: 1, fast: 0.5, turbo: 0.2 };
   const SPEED_LABEL = { slow: "ゆっくり", normal: "標準", fast: "高速", turbo: "爆速" };
+  const DEFAULT_DEV = { overrides: {}, force: "none", senbare: "off", rush6000: null };
 
-  function fresh(custom, settings) {
+  function fresh(custom, settings, dev) {
     return {
       v: 1,
       balls: 0, invested: 0, totalOut: 0, usedBalls: 0,
@@ -24,6 +25,7 @@
       completed: false,
       custom: { ...DEFAULT_CUSTOM, ...custom },
       settings: { ...DEFAULT_SETTINGS, ...settings },
+      dev: { ...DEFAULT_DEV, ...dev },
     };
   }
 
@@ -33,6 +35,7 @@
       if (!s || s.v !== 1) return null;
       s.custom = { ...DEFAULT_CUSTOM, ...s.custom };
       s.settings = { ...DEFAULT_SETTINGS, ...s.settings };
+      s.dev = { ...DEFAULT_DEV, ...s.dev };
       if (!D.CUSTOMS.senbare.choices[s.custom.senbare]) s.custom.senbare = DEFAULT_CUSTOM.senbare;
       return s;
     } catch {
@@ -70,7 +73,7 @@
 
   function addHold() {
     if (state.holds.length >= S.holdMax) return; // オーバー入賞（保留が満タン）
-    const hold = engine.makeHold("normal", state.custom);
+    const hold = engine.makeHold("normal", state.custom, takeForce("normal"));
     hold.shown = hold.reveal === "entry" ? hold.color : null;
     state.holds.push(hold);
     renderHolds();
@@ -110,7 +113,7 @@
 
   function topUpRushHolds() {
     while (state.rushHolds.length < S.holdMax) {
-      const hold = engine.makeHold("rush", state.custom);
+      const hold = engine.makeHold("rush", state.custom, takeForce("rush"));
       hold.shown = hold.reveal === "entry" ? hold.color : null;
       state.rushHolds.push(hold);
       renderHolds();
@@ -329,6 +332,142 @@
     } else {
       stage.setStatus(`<span class="chip">通常</span><span class="chip st">${state.sinceBonus}</span>`);
     }
+    if (devActive()) stage.setStatus(`<span class="chip dev">DEV</span>${document.querySelector(".status").innerHTML}`);
+  }
+
+  // ---------------- 開発者モード ----------------
+  // 陰陽玉落下・先バレの信頼度と出現割合をアプリ上で書き換える。
+  // engine はデータのオブジェクトをそのまま読むので、値を書き換えれば次の抽選から反映される。
+
+  // p はその演出の母数での大当り確率（出現頻度の計算用）。null は大当り時だけ出る演出。
+  function devGroups() {
+    const P = engine.P;
+    const list = [];
+    for (const k of Object.keys(D.SENBARE)) {
+      list.push({ key: `senbare.${k}`, title: `先陰陽玉落下（${D.CUSTOMS.senbare.choices[k]}）`, group: D.SENBARE[k], p: P.spin, unit: "保留" });
+    }
+    list.push({ key: "hand", title: "陰陽玉落下（変動中）", group: D.NORMAL_YOKOKU.find((g) => g.id === "hand"), p: P.spin, unit: "回転" });
+    list.push({ key: "sakura", title: "西行妖 開花予告（陰陽玉弱落下）", group: D.NORMAL_YOKOKU.find((g) => g.id === "sakura"), p: P.spin, unit: "回転" });
+    list.push({ key: "spDrop", title: "SP発展時の陰陽玉落下", group: D.NORMAL_SP_YOKOKU.find((g) => g.id === "spDrop"), p: P.sp, unit: "SPリーチ" });
+    const seen = new Set();
+    for (const r of [...D.NORMAL_REACH.options, ...D.RUSH_REACH.options]) {
+      for (const g of r.subs || []) {
+        if (seen.has(g)) continue;
+        if (g.id === "drop") {
+          seen.add(g);
+          list.push({ key: `drop.${r.id}`, title: `${r.kind === "chara" ? "キャラリーチ（共通）" : r.label}の陰陽玉落下`, group: g, p: r.rel, unit: "リーチ" });
+        } else if (g.id === "yakuTiming") {
+          seen.add(g);
+          list.push({ key: "yakuTiming", title: "デバイス時の陰陽玉落下（全SP共通）", group: g, p: null, unit: "" });
+        }
+      }
+    }
+    return list;
+  }
+
+  let devDefaults = null;
+  const devKey = (d, o) => `${d.key}:${o.id}`;
+
+  function snapshotDevDefaults() {
+    devDefaults = { rush6000: S.rush6000Rate };
+    for (const d of devGroups()) for (const o of d.group.options) devDefaults[devKey(d, o)] = { rel: o.rel, share: o.share };
+  }
+
+  function applyDev() {
+    for (const d of devGroups()) {
+      for (const o of d.group.options) {
+        const v = state.dev.overrides[devKey(d, o)] || devDefaults[devKey(d, o)];
+        o.rel = v.rel;
+        o.share = v.share;
+      }
+    }
+    S.rush6000Rate = state.dev.rush6000 ?? devDefaults.rush6000;
+  }
+
+  const devActive = () =>
+    Object.keys(state.dev.overrides).length > 0 || state.dev.rush6000 != null || state.dev.force !== "none" || state.dev.senbare !== "off";
+
+  // 次に入賞する保留の結果・先バレを固定する（1回だけ、先バレは毎回も可）
+  function takeForce(mode) {
+    const kind = state.dev.force !== "none" ? state.dev.force : null;
+    const senbare = mode === "normal" && state.dev.senbare !== "off";
+    if (!kind && !senbare) return null;
+    if (kind) state.dev.force = "none";
+    if (senbare && state.dev.senbare === "once") state.dev.senbare = "off";
+    save();
+    if (!$("menu").hidden && tab === "dev") renderMenu();
+    return { kind, senbare };
+  }
+
+  // ハズレ時の出現率（engine と同じ式）と、母数あたりの出現頻度
+  const missRate = (o, p) => (o.rel >= 1 ? 0 : (o.share * p * (1 - o.rel)) / (o.rel * (1 - p)));
+  function devFreq(o, d) {
+    if (d.p == null) return `当たりの${+(o.share * 100).toFixed(1)}%`;
+    const per = d.p * o.share + (1 - d.p) * missRate(o, d.p);
+    if (per <= 0) return "出ない";
+    const n = 1 / per;
+    return `約1/${n >= 100 ? fmt(n) : n.toFixed(1)}${d.unit}`;
+  }
+  function devWarn(d) {
+    const hit = d.group.options.reduce((a, o) => a + o.share, 0);
+    const miss = d.p == null ? 0 : d.group.options.reduce((a, o) => a + missRate(o, d.p), 0);
+    const w = [];
+    if (hit > 1) w.push("当たり時の合計が100%を超えているので、比率で配分されます。");
+    if (miss > 1) w.push("ハズレ時に出る割合が100%を超えるので、実際の信頼度は設定より高くなります。");
+    return w.join("");
+  }
+
+  function renderDev() {
+    let body = `<p class="note">陰陽玉落下と先バレの出方を変えられます。<b>信頼度</b>はその演出が出たときの大当り率、<b>当たり時</b>は大当りのうち何%でその演出が出るか。ハズレ時の出方はこの2つから自動で決まり、右端にだいたいの出現頻度が出ます。変更すると画面右上に DEV と表示されます。</p>`;
+    body += field("次の入賞を固定（1回）", "次に入賞した保留1つの結果を固定する。RUSH中はハズレ以外が大当りになる。",
+      seg("dev.force", { none: "なし", rushHit: "大当り→RUSH", hit: "大当り→通常", charge: "チャージ", miss: "ハズレ" }, state.dev.force));
+    body += field("先バレを強制", "保留入賞時に陰陽玉を必ず落とす（先バレのカスタムがOFFでも落ちる）。",
+      seg("dev.senbare", { off: "OFF", once: "次の1回", always: "毎回" }, state.dev.senbare));
+    for (const d of devGroups()) {
+      const changed = d.group.options.some((o) => state.dev.overrides[devKey(d, o)]);
+      const rows = d.group.options.map((o) => {
+        const k = devKey(d, o);
+        return `<tr><th>${o.label}${o.rushOnly ? "<br><small>RUSH直行のみ</small>" : ""}</th>
+          <td><input class="num-in" type="number" inputmode="decimal" min="0.1" max="100" step="0.1" data-dev="${k}" data-field="rel" value="${+(o.rel * 100).toFixed(2)}" aria-label="${o.label}の信頼度（%）"></td>
+          <td><input class="num-in" type="number" inputmode="decimal" min="0" max="100" step="0.1" data-dev="${k}" data-field="share" value="${+(o.share * 100).toFixed(2)}" aria-label="${o.label}の当たり時の出現割合（%）"></td>
+          <td class="freq">${devFreq(o, d)}</td></tr>`;
+      }).join("");
+      const warn = devWarn(d);
+      body += `<details class="dev-group" ${d.key.startsWith("senbare") || d.key === "hand" ? "open" : ""}>
+        <summary>${d.title}${changed ? ' <span class="chip dev">変更中</span>' : ""}</summary>
+        <div class="table-wrap"><table class="spec dev-table"><thead><tr><th>演出</th><th>信頼度%</th><th>当たり時%</th><th>出現</th></tr></thead><tbody>${rows}</tbody></table></div>
+        ${warn ? `<p class="warn">${warn}</p>` : ""}</details>`;
+    }
+    const big = state.dev.rush6000 ?? devDefaults.rush6000;
+    body += field("夢想封印MAX（6000発）の割合", "RUSH中の大当りのうち、BONUS中に陰陽玉が落ちて6000発になる割合。",
+      `<input class="num-in wide" type="number" inputmode="decimal" min="0" max="100" step="0.5" data-dev="rush6000" value="${+(big * 100).toFixed(2)}" aria-label="6000発の割合（%）">`, `<b>${+(big * 100).toFixed(1)}%</b>`);
+    body += `<div class="field"><button type="button" class="btn-danger" id="devReset">すべて元の値に戻す</button></div>`;
+    return body;
+  }
+
+  function onDevInput(el) {
+    const k = el.dataset.dev;
+    let v = parseFloat(el.value);
+    if (!Number.isFinite(v)) return renderMenu();
+    if (k === "rush6000") {
+      v = Math.min(100, Math.max(0, v)) / 100;
+      state.dev.rush6000 = v === devDefaults.rush6000 ? null : v;
+    } else {
+      const field = el.dataset.field;
+      v = field === "rel" ? Math.min(100, Math.max(0.1, v)) / 100 : Math.min(100, Math.max(0, v)) / 100;
+      const [gk, oid] = [k.slice(0, k.lastIndexOf(":")), k.slice(k.lastIndexOf(":") + 1)];
+      const d = devGroups().find((x) => x.key === gk);
+      const o = d && d.group.options.find((x) => x.id === oid);
+      if (!o) return;
+      const next = { rel: o.rel, share: o.share, [field]: v };
+      const def = devDefaults[k];
+      if (Math.abs(next.rel - def.rel) < 1e-9 && Math.abs(next.share - def.share) < 1e-9) delete state.dev.overrides[k];
+      else state.dev.overrides[k] = next;
+    }
+    applyDev();
+    save();
+    renderStatus();
+    renderMenu();
   }
 
   function renderCounters() {
@@ -496,6 +635,8 @@
       body += field("音量", "", `<input id="volRange" class="range" type="range" min="0" max="1" step="0.05" value="${st.volume}">`);
       body += field("バイブ", "対応している端末（主にAndroid）で、役物落下やレバブルのときに振動する。", seg("settings.vibe", { on: "ON", off: "OFF" }, st.vibe));
       body += field("信頼度を表示", "出た演出と信頼度を「演出ログ」に表示する。", seg("settings.showRel", { on: "ON", off: "OFF" }, st.showRel));
+    } else if (tab === "dev") {
+      body = renderDev();
     } else if (tab === "spec") {
       const cont = 1 - Math.pow(1 - S.rushProb, S.stSpins);
       body = `<div class="table-wrap"><table class="spec"><tbody>
@@ -546,6 +687,14 @@
     });
     const rb = $("resetBtn");
     if (rb) rb.addEventListener("click", () => openConfirm());
+    const db = $("devReset");
+    if (db) db.addEventListener("click", () => {
+      state.dev = { ...DEFAULT_DEV };
+      applyDev();
+      save();
+      renderStatus();
+      renderMenu();
+    });
   }
 
   function applySettings() {
@@ -556,6 +705,7 @@
     window.Sound.setVolume(st.volume);
     window.Sound.setBgm(st.bgm === "on");
     renderLog();
+    renderStatus();
   }
 
   function openMenu() {
@@ -572,7 +722,7 @@
 
   function doReset() {
     pendingReset = false;
-    state = fresh(state.custom, state.settings);
+    state = fresh(state.custom, state.settings, state.dev);
     current = null;
     document.querySelectorAll(".complete").forEach((n) => n.remove());
     stage.clearSpin();
@@ -612,6 +762,9 @@
         renderMenu();
       }
     });
+    $("menu").addEventListener("change", (e) => {
+      if (e.target.matches("[data-dev]")) onDevInput(e.target);
+    });
     $("menuTabs").addEventListener("click", (e) => {
       const b = e.target.closest("[data-tab]");
       if (!b) return;
@@ -635,7 +788,10 @@
 
   function start(data) {
     state = (data && data.state) || load() || fresh();
+    state.dev = { ...DEFAULT_DEV, ...state.dev };
     current = null;
+    snapshotDevDefaults();
+    applyDev();
     stage = window.GensouStage.createStage($("stage"), {
       onTime,
       onLog,

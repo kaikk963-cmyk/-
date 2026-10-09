@@ -674,8 +674,8 @@ button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px s
 @media (min-width: 700px) { .scrim { align-items: center; } .sheet { border-radius: 20px; } }
 .sheet-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 10px; }
 .sheet-head h2 { margin: 0; font-family: var(--font-display); font-size: 22px; font-weight: 400; }
-.tabs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; margin-bottom: 12px; background: var(--night); padding: 4px; border-radius: 12px; }
-.tabs button { border: 0; background: transparent; padding: 8px 4px; font-size: 13px; }
+.tabs { display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; margin-bottom: 12px; background: var(--night); padding: 4px; border-radius: 12px; }
+.tabs button { border: 0; background: transparent; padding: 8px 2px; font-size: 12px; }
 .tabs button[aria-selected="true"] { background: var(--panel-2); color: var(--gold); font-weight: 700; }
 .field { display: grid; gap: 6px; padding: 10px 0; border-bottom: 1px solid var(--line); }
 .field:last-child { border-bottom: 0; }
@@ -717,3 +717,16 @@ button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px s
   .stage.quake, .reel.shake, .ctl.buru, .bg.rush { animation: none !important; }
   .reel.spinning .strip { filter: none; }
 }
+
+/* 開発者モード */
+.chip.dev { background: #ff9a1f; border-color: #ffd29a; color: #2a1400; font-weight: 700; }
+.dev-group { border-bottom: 1px solid var(--line); padding: 8px 0; }
+.dev-group summary { cursor: pointer; font-weight: 700; padding: 4px 0; }
+.dev-table th, .dev-table td { padding: 5px 3px; vertical-align: middle; }
+.dev-table thead th { font-size: 11px; color: var(--muted); }
+.dev-table tbody th { width: auto; color: var(--ink); }
+.dev-table small { color: var(--muted); font-size: 10px; }
+.dev-table .freq { font-size: 12px; color: var(--gold); white-space: nowrap; }
+.num-in { width: 64px; padding: 6px; border-radius: 8px; border: 1px solid var(--line); background: var(--night); font-variant-numeric: tabular-nums; }
+.num-in.wide { width: 100px; }
+.warn { margin: 6px 0 0; font-size: 12px; color: #ffb36b; line-height: 1.6; }
