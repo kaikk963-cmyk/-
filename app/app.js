@@ -11,7 +11,7 @@
   const DEFAULT_SETTINGS = { boardV: 5, board: "on", shot: "left", autoShot: "on", leftStrength: 45, rightStrength: 90, hesoOpen: 2.25, rate: 18, speed: "normal", autoPush: "off", sound: "on", bgm: "off", volume: 0.7, vibe: "on", showRel: "on" };
   const SPEEDS = { slow: 1.35, normal: 1, fast: 0.5, turbo: 0.2 };
   const SPEED_LABEL = { slow: "ゆっくり", normal: "標準", fast: "高速", turbo: "爆速" };
-  const DEFAULT_DEV = { overrides: {}, force: "none", senbare: "off", rush6000: null, dropBtn: "off" };
+  const DEFAULT_DEV = { overrides: {}, force: "none", senbare: "off", rush6000: null, dropBtn: "on" };
 
   function fresh(custom, settings, dev) {
     return {
@@ -24,6 +24,7 @@
       holds: [], rushHolds: [],
       history: [], graph: [0], log: [],
       completed: false,
+      devV: 2,
       custom: { ...DEFAULT_CUSTOM, ...custom },
       settings: { ...DEFAULT_SETTINGS, ...settings },
       dev: { ...DEFAULT_DEV, ...dev },
@@ -32,7 +33,15 @@
 
   function load() {
     try {
-      const s = JSON.parse(localStorage.getItem(KEY));
+      return migrate(JSON.parse(localStorage.getItem(KEY)));
+    } catch {
+      return null;
+    }
+  }
+
+  // 古い版で保存されたデータを今の形にそろえる
+  function migrate(s) {
+    try {
       if (!s || s.v !== 1) return null;
       s.custom = { ...DEFAULT_CUSTOM, ...s.custom };
       s.settings = { ...DEFAULT_SETTINGS, ...s.settings };
@@ -41,6 +50,11 @@
         for (const k of ["boardV", "leftStrength", "rightStrength", "hesoOpen"]) s.settings[k] = DEFAULT_SETTINGS[k];
       }
       s.dev = { ...DEFAULT_DEV, ...s.dev };
+      // 役物投下ボタンは最初から出す（以前は初期OFFだった）
+      if (s.devV !== 2) {
+        s.dev.dropBtn = "on";
+        s.devV = 2;
+      }
       s.fired = s.fired || 0;
       s.returns = s.returns || 0;
       if (!D.CUSTOMS.senbare.choices[s.custom.senbare]) s.custom.senbare = DEFAULT_CUSTOM.senbare;
@@ -52,6 +66,8 @@
 
   let state = null;
   let stage = null;
+  let cloudOn = false;
+  let startSavedAt = 0;
   let running = false;
   let handleOn = false;
   let current = null;
@@ -61,9 +77,51 @@
   let started = false;
 
   function save() {
+    state.savedAt = Date.now();
     try {
       localStorage.setItem(KEY, JSON.stringify(state));
     } catch {}
+    window.GensouCloud.saveState(state);
+  }
+
+  // アカウント側の保存と同期する。新しいほうのプレイデータを使い、素材は双方向にそろえる
+  async function syncCloud() {
+    const C = window.GensouCloud;
+    if (!(await C.init())) return;
+    cloudOn = true;
+    const remote = migrate(await C.loadState());
+    // 起動時に端末から読めたデータの保存時刻と比べる（起動直後の保存で新しく見えないように）
+    if (remote && (remote.savedAt || 0) > startSavedAt && !running && !handleOn) {
+      state = remote;
+      current = null;
+      applyDev();
+      stage.setMode(state.mode);
+      window.Sound.setTheme(state.mode === "rush" ? "rush" : "normal");
+      applySettings();
+      setShot(state.settings.shot);
+      board.setHeso(state.settings.hesoOpen);
+      render();
+    } else {
+      save();
+    }
+    const A = window.GensouAssets;
+    let changed = false;
+    for (const key of C.artKeys()) {
+      if (A.blob(key)) continue;
+      const blob = await C.fetchArt(key);
+      if (blob) {
+        await A.put(key, blob);
+        changed = true;
+      }
+    }
+    if (C.canStoreArt()) {
+      for (const key of A.keys()) if (!C.artKeys().includes(key)) await C.putArt(key, A.blob(key));
+    }
+    if (changed) {
+      stage.refreshArt();
+      loadCustomSounds();
+    }
+    if (!$("menu").hidden) renderMenu();
   }
 
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -569,7 +627,7 @@
     body += field("陰陽玉を今すぐ落とす", "役物を落とす演出だけを出す。抽選結果には関係しない。当たりにしたいときは「次の入賞を固定」と組み合わせる。",
       `<div class="drop-btns"><button type="button" data-drop="normal">通常音</button><button type="button" data-drop="low">低音</button><button type="button" data-drop="high">高音</button><button type="button" data-drop="weak">弱落下</button></div>`);
     body += field("RUSHを強制終了", "弾幕RUSH中に押すと、今の変動（とBONUS）が終わったところでRUSHを終える。", `<button type="button" class="btn-danger" data-endrush ${state.mode === "rush" ? "" : "disabled"}>${state.mode === "rush" ? "RUSHを今すぐ終わらせる" : "RUSH中だけ押せます"}</button>`);
-    body += field("メイン画面に開発ボタン", "PUSHとレバーの横に「役物投下」ボタンと、RUSH中は「RUSH終了」ボタンを出す。", seg("dev.dropBtn", { off: "OFF", on: "ON" }, state.dev.dropBtn));
+    body += field("メイン画面に役物投下ボタン", "PUSHとレバーの横に「役物投下」ボタンと、RUSH中は「RUSH終了」ボタンを出す（初期ON）。", seg("dev.dropBtn", { off: "OFF", on: "ON" }, state.dev.dropBtn));
     for (const d of devGroups()) {
       const changed = d.group.options.some((o) => state.dev.overrides[devKey(d, o)]);
       const rows = d.group.options.map((o) => {
@@ -620,7 +678,8 @@
   function renderArt() {
     const A = window.GensouAssets;
     let body = `<p class="note">キャラの立ち絵や背景を、この端末の画像から取り込めます。取り込んだ画像はこのブラウザの中だけに保存され、ほかの人には見えません。<br><b>フリー素材でも、使う前に各素材の利用規約を確認してください。</b>クレジット表記が必要なもの、再配布が禁止のもの、ギャンブル・パチンコ系での使用を禁止しているものがあります。立ち絵は背景が透過したPNGがきれいに出ます。</p>`;
-    if (!A.persistent()) body += `<p class="warn">この環境では画像を保存できないため、ページを閉じると取り込んだ画像は消えます。</p>`;
+    if (window.GensouCloud.canStoreArt()) body += `<p class="note">取り込んだ素材は claude.ai のアカウントにも保存されるので、アプリを閉じても消えません。</p>`;
+    else if (!A.persistent()) body += `<p class="warn">この環境では画像を保存できないため、ページを閉じると取り込んだ画像は消えます。</p>`;
     body += artSlots().map((sl) => {
       const u = A.url(sl.key);
       const thumb = u ? `<img src="${u}" alt="">` : sl.char ? window.GensouStage.crestSVG(sl.char) : "";
@@ -649,6 +708,7 @@
     loadCustomSounds();
     stage.refreshArt();
     renderMenu();
+    window.GensouCloud.putArt(el.dataset.asset, file);
   }
 
   function onDevInput(el) {
@@ -878,6 +938,7 @@
         <tr><th>総出玉</th><td>${fmt(state.totalOut)}発</td></tr>
         <tr><th>投資</th><td>${fmt(state.invested)}円</td></tr>
       </tbody></table>
+      <p class="note">保存先：${cloudOn ? "claude.ai のアカウント（アプリを閉じても残ります）＋この端末" : "この端末のブラウザだけ（ブラウザのデータを消すと消えます）"}</p>
       <div class="field"><button type="button" class="btn-danger" id="resetBtn">データをリセット</button>
       <div class="desc">持ち玉・投資・履歴・グラフを消して最初からにします。カスタムと設定は残ります。</div></div>
       <p class="note">このアプリは東方Projectの二次創作として作ったオリジナルのパチンコシミュレーターです。上海アリス幻樂団とは関係ありません。キャラクターは文字と紋で表現し、原作の画像や音楽は使っていません。実際のお金は扱いません。</p>`;
@@ -1010,6 +1071,7 @@
       const del = e.target.closest("[data-asset-del]");
       if (del) {
         await window.GensouAssets.remove(del.dataset.assetDel);
+        window.GensouCloud.removeArt(del.dataset.assetDel);
         loadCustomSounds();
         stage.refreshArt();
         renderMenu();
@@ -1040,12 +1102,14 @@
     window.addEventListener("resize", () => renderGraph());
     document.addEventListener("visibilitychange", () => {
       if (document.hidden && handleOn) setHandle(false);
+      if (document.hidden) window.GensouCloud.flush();
     });
   }
 
   function start(data) {
     state = (data && data.state) || load() || fresh();
     state.dev = { ...DEFAULT_DEV, ...state.dev };
+    startSavedAt = state.savedAt || 0;
     current = null;
     snapshotDevDefaults();
     applyDev();
@@ -1081,6 +1145,7 @@
     window.GensouAssets.init().then(() => {
       stage.refreshArt();
       loadCustomSounds();
+      syncCloud();
     });
     if (state.completed) showComplete();
     else if (!started) stage.overlay(`<div class="t">e東方幻想弾幕録</div><div class="m">打ち出しで開始</div>`, "card tone-gold start-hint").style.cssText = "left:10%;right:10%;top:62%;z-index:7;pointer-events:none";
