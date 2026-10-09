@@ -3,7 +3,7 @@
 // 演出は「当否を先に決めてから、当否ごとの出現率で選ぶ」方式。
 // 大当り時の出現率 share をデータで決め、ハズレ時の出現率を
 //   share * p * (1 - rel) / (rel * (1 - p))
-// で逆算するので、各演出の信頼度は掲載値 rel と一致する（p はその演出の母数での大当り確率）。
+// で逆算するので、各演出の信頼度はデータの rel と一致する（p はその演出の母数での大当り確率）。
 (function (root) {
   function createEngine(D, rng = Math.random) {
     const S = D.SPEC;
@@ -16,7 +16,7 @@
       return ((o.share / norm) * p * (1 - o.rel)) / (o.rel * (1 - p));
     }
 
-    // 当否を条件とした母数ごとの大当り確率
+    // リーチ時・SPリーチ時を母数にしたときの大当り確率
     function contextProbs(p, reachGroup) {
       const norm = shareNorm(reachGroup);
       let missAll = 0, missSp = 0, hitSp = 0;
@@ -39,10 +39,12 @@
     const P = {
       spin: S.hitProb, reach: nc.reach, sp: nc.sp,
       rushSpin: S.rushProb, rushSp: rc.sp,
+      bonus: S.hitRushRate,
     };
 
     // 当否 out = { hit, rush } に応じて group から1つ選ぶ。何も出ないときは null。
-    function pick(group, out, p, rushRate = S.hitRushRate) {
+    // rushRate は rushOnly の演出を当たりの中でどれだけ寄せるかの補正（RUSH中は 1）。
+    function pick(group, out, p, rushRate) {
       const norm = shareNorm(group);
       let ws;
       if (out.hit) {
@@ -61,10 +63,13 @@
       return null;
     }
 
-    const pickP = (group, out, self) => pick(group, out, group.ctx === "self" ? self : P[group.ctx]);
+    const rushRateOf = (ctx) => (ctx === "rushSpin" || ctx === "rushSp" ? 1 : S.hitRushRate);
+    const pickCtx = (group, out, selfP) =>
+      pick(group, out, group.ctx === "self" ? selfP : P[group.ctx], rushRateOf(group.ctx));
     const info = (group, o) => ({ group: group.name, label: o.label, rel: o.rel });
     const rand = (n) => Math.floor(rng() * n);
     const choice = (arr) => arr[rand(arr.length)];
+    const outOf = (result) => ({ hit: result.kind === "hit", rush: result.rush });
 
     // ---------------- 抽選 ----------------
 
@@ -80,33 +85,54 @@
       return { kind: "miss", rush: false };
     }
 
-    // 入賞時に当否と保留の見た目（先読み）を決める
-    function makeHold(mode, rushMode) {
-      const result = mode === "rush" ? drawRush() : drawNormal();
-      const out = { hit: result.kind === "hit", rush: result.rush };
-      const hold = { result, color: null, reveal: "start", preread: null, notice: false };
+    let holdSeq = 0;
 
-      const holdGroup = mode === "rush" ? D.RUSH_HOLD : D.NORMAL_HOLD;
-      const preGroup = mode === "rush" ? D.RUSH_PREREAD : D.NORMAL_PREREAD;
-      const useEffects = mode === "normal" || rushMode === "default";
+    // 入賞時に当否と、保留の見た目・先読み・先バレを決める
+    function makeHold(mode, custom) {
+      const rush = mode === "rush";
+      const result = rush ? drawRush() : drawNormal();
+      const out = rush ? { hit: result.kind === "hit", rush: true } : outOf(result);
+      const hold = {
+        id: ++holdSeq, mode, result,
+        color: null, colorInfo: null, reveal: "start", breakTo: null,
+        preread: [], senbare: null, ura: false, notice: false,
+      };
+      const minRel = D.SAKIYOMI_MIN_REL[rush ? "rush" : "normal"][custom.sakiyomi] ?? 0;
+      const effects = !rush || custom.rushMode === "default";
 
-      if (useEffects) {
-        const c = pick(holdGroup, out, P[holdGroup.ctx], mode === "rush" ? 1 : S.hitRushRate);
+      if (effects) {
+        const holdGroup = rush ? D.RUSH_HOLD : D.NORMAL_HOLD;
+        const c = pickCtx(holdGroup, out);
         if (c) {
           hold.color = c.color;
           hold.breakTo = c.breakTo || null;
           hold.colorInfo = info(holdGroup, c);
-          hold.reveal = c.color === "chain" || rng() < 0.5 ? "entry" : "start";
+          const visible = c.rel >= minRel;
+          if (visible && (c.color === "seal" || custom.sakiyomi !== "osusume" || rng() < 0.5)) hold.reveal = "entry";
         }
-        const pr = pick(preGroup, out, P[preGroup.ctx], mode === "rush" ? 1 : S.hitRushRate);
-        if (pr) hold.preread = { id: pr.id, info: info(preGroup, pr) };
+        hold.preread = [];
+        for (const g of rush ? D.RUSH_PREREAD : D.NORMAL_PREREAD) {
+          const pr = pickCtx(g, out);
+          if (pr && pr.rel >= minRel) hold.preread.push({ group: g.id, id: pr.id, label: pr.label, info: info(g, pr) });
+        }
       }
-      if (mode === "rush" && rushMode === "rize" && out.hit && rng() < 0.6) hold.notice = true;
+
+      if (!rush && custom.senbare && custom.senbare !== "off") {
+        const g = D.SENBARE[custom.senbare];
+        const s = pickCtx(g, out);
+        if (s) {
+          hold.senbare = { sound: s.sound, info: { group: `${g.name}（${D.CUSTOMS.senbare.choices[custom.senbare]}）`, label: s.label, rel: s.rel } };
+          hold.ura = result.kind === "hit" && result.rush && rng() < D.URA_BUTTON_RATE;
+        }
+      }
+
+      if (rush && custom.rushMode === "shurai" && out.hit && rng() < 0.6) hold.notice = true;
       return hold;
     }
 
     // ---------------- 図柄 ----------------
 
+    // RUSH直行の当たり：7・2・6が出やすい。7はテンパイした時点でRUSH濃厚。
     const RUSH_DIGITS = [7, 7, 7, 7, 2, 2, 2, 6, 6, 6, 1, 3, 4, 5, 8, 9];
     const NORMAL_DIGITS = [1, 3, 4, 5, 8, 9];
 
@@ -119,7 +145,7 @@
     function missDigits(reach) {
       if (reach) {
         const d = choice([1, 2, 3, 4, 5, 6, 8, 9]); // 7テンパイはRUSH濃厚なのでハズレでは出さない
-        const off = ((d - 1 + (rng() < 0.5 ? 1 : 8)) % 9) + 1; // 前後ハズレ
+        const off = ((d - 1 + (rng() < 0.5 ? 1 : 8)) % 9) + 1; // 1コマずれ
         return [d, off, d];
       }
       const a = 1 + rand(9);
@@ -128,28 +154,29 @@
       return [a, 1 + rand(9), b];
     }
 
-    // ---------------- 通常時シナリオ ----------------
+    // ---------------- リーチの組み立て ----------------
 
-    const TELOP = {
-      white: "まだ終わらせない",
-      red: "ここで決める…！",
-      gold: "これが僕の答えだ",
-    };
+    const TELOP = { white: "まだ終わらせない", red: "ここで決めるわ…！", gold: "異変はここで終わりよ" };
 
+    // リーチ内のチャンスアップ。信頼度はリーチごとに違うので、名前にリーチ名を付けて区別する。
     function subsOf(reach, out) {
       const picked = {};
       for (const g of reach.subs || []) {
-        const o = pickP(g, out, reach.rel);
-        if (o) picked[g.id] = { o, info: info(g, o) };
+        const o = pickCtx(g, out, reach.rel);
+        if (o) picked[g.id] = { o, info: { group: `${reach.label}／${g.name}`, label: o.label, rel: o.rel } };
       }
       return picked;
     }
 
-    function deviceSteps(subs, out) {
-      const dev = subs.device ? "vcon" : "button";
+    function deviceSteps(subs) {
       const timing = subs.yakuTiming ? subs.yakuTiming.o.id : null;
-      const steps = [];
-      steps.push({ t: "device", device: dev, info: subs.device ? subs.device.info : null, handAt: timing });
+      const steps = [{
+        t: "device",
+        device: subs.device ? "lever" : "button",
+        info: subs.device ? subs.device.info : null,
+        handAt: timing === "deviceAppear" || timing === "deviceOperate" ? timing : null,
+        handInfo: subs.yakuTiming ? subs.yakuTiming.info : null,
+      }];
       if (timing === "kyusai") steps.push({ t: "fakeEnd" }, { t: "hand", sound: "high", info: subs.yakuTiming.info });
       return steps;
     }
@@ -160,92 +187,164 @@
       return { t, color, text: text || TELOP[color], info: s ? s.info : null };
     }
 
-    function reachSteps(reach, out) {
-      const subs = subsOf(reach, out);
+    const reachTitle = (reach, color) => ({
+      t: "reach", id: reach.id, kind: reach.kind, char: reach.char || null, label: reach.label, color,
+      info: { group: "リーチ", label: reach.label, rel: reach.rel },
+    });
+
+    function spCards(groups, out) {
       const steps = [];
-      const sp = [];
-      if (reach.sp) {
-        for (const g of D.NORMAL_SP_YOKOKU) {
-          const o = pickP(g, out);
-          if (o) sp.push({ t: "card", id: g.id, title: g.name, text: o.label, color: o.color, info: info(g, o) });
-        }
+      for (const g of groups) {
+        const o = pickCtx(g, out);
+        if (!o) continue;
+        const i = info(g, o);
+        if (g.id === "spDrop") steps.push({ t: "hand", sound: "normal", timing: o.id, info: i });
+        else steps.push({ t: "card", id: g.id, title: g.name, text: o.label, color: o.color, info: i });
       }
-      const title = (color) => ({ t: "reach", id: reach.id, kind: reach.kind, label: reach.label, color, info: { group: "リーチ", label: reach.label, rel: reach.rel } });
+      return steps;
+    }
+
+    function normalReachSteps(reach, out) {
+      const subs = subsOf(reach, out);
+      const sp = reach.sp ? spCards(D.NORMAL_SP_YOKOKU, out) : [];
+      const drop = sp.filter((s) => s.t === "hand");
+      const cards = sp.filter((s) => s.t !== "hand");
+      const steps = [];
 
       switch (reach.kind) {
         case "normal":
-          steps.push({ t: "wait", ms: 1800 });
+          steps.push({ t: "wait", ms: 1600 });
           break;
         case "chara":
-          steps.push(title("white"), colorStep("telop", subs, "telop"));
+          steps.push(reachTitle(reach, "white"), colorStep("telop", subs, "telop"));
           if (subs.drop) steps.push({ t: "hand", sound: "normal", info: subs.drop.info });
-          steps.push({ t: "wait", ms: 1200 });
+          steps.push({ t: "wait", ms: 1000 });
           break;
         case "long":
-          steps.push(title("white"), colorStep("telop", subs, "telop"));
-          if (subs.rize) steps.push({ t: "card", id: "rize", title: "リゼ登場", text: "", color: "red", info: subs.rize.info });
-          steps.push({ t: "wait", ms: 1500 });
+          steps.push(reachTitle(reach, "white"), colorStep("telop", subs, "telop"));
+          if (subs.yukari) steps.push({ t: "card", id: "yukariToujou", char: "yukari", title: "紫 登場", text: "あら、面白そうね", color: "purple", info: subs.yukari.info });
+          steps.push({ t: "wait", ms: 1300 });
           break;
         case "battle":
-          steps.push({ t: "wait", ms: 900 }, title(subs.title ? subs.title.o.color : "white"), colorStep("telop", subs, "telop"));
+          steps.push({ t: "wait", ms: 700 }, ...drop, reachTitle(reach, subs.title ? subs.title.o.color : "white"), colorStep("telop", subs, "telop"));
           if (subs.lamp) steps.push({ t: "lamp", info: subs.lamp.info });
           if (subs.drop) steps.push({ t: "hand", sound: "normal", info: subs.drop.info });
-          if (subs.strong) steps.push({ t: "card", id: "strong", title: "彼岸花役物 作動", text: "強ルートへ", color: "red", info: subs.strong.info });
-          steps.push(...sp, colorStep("cutin", subs, "cutin", reach.label.replace(/^.* /, "")), ...deviceSteps(subs, out));
+          if (subs.strong) steps.push({ t: "sakura", id: "strong", text: "強ルートへ", info: subs.strong.info });
+          steps.push(...cards, colorStep("cutin", subs, "cutin", `${D.CHARS.reimu.spell}`), ...deviceSteps(subs));
           break;
         case "episode":
-          steps.push(title(subs.title ? subs.title.o.color : "white"), colorStep("telop", subs, "telop"));
-          steps.push(...sp, colorStep("cutin", subs, "cutin", "金木"), ...deviceSteps(subs, out));
+          steps.push(...drop, reachTitle(reach, subs.title ? subs.title.o.color : "white"), colorStep("telop", subs, "telop"));
+          steps.push(...cards, colorStep("cutin", subs, "cutin", D.CHARS.reimu.spell), ...deviceSteps(subs));
           break;
         case "climax":
-          steps.push({ t: "card", id: "kakugo", title: "覚悟の証明", text: "喰種クライマックスリーチへ", color: "red", info: null });
-          steps.push(title("red"), colorStep("card", subs, "yubipoki", "指ポキ"), colorStep("telop", subs, "monologue"));
-          steps.push(...sp, colorStep("cutin", subs, "cutin", "金木"), ...deviceSteps(subs, out));
+          steps.push({ t: "card", id: "hakurei", char: "reimu", title: "博麗の巫女", text: "弾幕クライマックスへ", color: "red", info: null });
+          steps.push(...drop, reachTitle(reach, "red"));
+          steps.push(colorStep("declare", subs, "declare", D.CHARS[reach.char].spell));
+          steps.push(colorStep("telop", subs, "monologue"));
+          steps.push(...cards, colorStep("cutin", subs, "cutin", "霊符「夢想封印」"), ...deviceSteps(subs));
           break;
-        case "fukoroshi":
-          steps.push({ t: "fakeEnd" }, { t: "card", id: "fukoroshiAori", title: "……", text: "まだ終わらない", color: "white", info: null });
-          steps.push(title("white"), ...sp, ...deviceSteps(subs, out));
+        case "revive":
+          steps.push({ t: "fakeEnd" }, { t: "sukima", text: "まだ終わりじゃないわ" });
+          steps.push(...drop, reachTitle(reach, "purple"), ...cards, ...deviceSteps(subs));
           break;
-        case "hankakuja":
-          steps.push(title("red"), ...sp, ...deviceSteps(subs, out));
+        case "kinki":
+          steps.push(...drop, reachTitle(reach, "red"), ...cards, ...deviceSteps(subs));
           break;
         case "zenkaiten":
-          steps.push({ t: "zenkaiten", info: { group: "リーチ", label: "全回転", rel: 1 } });
           break;
       }
       return steps;
     }
 
-    function normalScenario(hold) {
+    function rushReachSteps(reach, out) {
+      const subs = subsOf(reach, out);
+      const sp = reach.sp ? spCards(D.RUSH_SP_YOKOKU, out) : [];
+      const steps = [];
+      const card = (key, title, text, color, char) =>
+        subs[key] ? [{ t: "card", id: key, title, text, color, char, info: subs[key].info }] : [];
+
+      switch (reach.kind) {
+        case "normal":
+          steps.push({ t: "wait", ms: 1000 });
+          break;
+        case "shunkan":
+          steps.push(reachTitle(reach, "red"), ...sp, ...card("kesshin", "霊夢の決意", "一瞬で決める", "red", "reimu"), ...deviceSteps(subs));
+          break;
+        case "danmaku":
+          steps.push(reachTitle(reach, "red"), ...card("music", "楽曲変化", "♪", "gold"), ...sp, ...card("gabure", "画ブレ", "", "red"));
+          steps.push({ t: "card", id: "attack", title: "攻撃", text: subs.attack ? "スペルカード一撃" : "弾幕連打", color: subs.attack ? "red" : "white", info: subs.attack ? subs.attack.info : null });
+          steps.push(...deviceSteps(subs));
+          break;
+        case "kessen":
+          steps.push(reachTitle(reach, subs.title ? "gold" : "red"), ...sp);
+          steps.push({ t: "card", id: "sensei", char: subs.sensei ? "reimu" : "flandre", title: "最終煽り", text: subs.sensei ? "霊夢の先制攻撃" : "フランの先制攻撃", color: subs.sensei ? "gold" : "white", info: subs.sensei ? subs.sensei.info : null });
+          steps.push(...deviceSteps(subs));
+          break;
+        case "kyuushutsu":
+          steps.push(reachTitle(reach, "white"), ...sp, ...card("light", "集光エフェクト", "大", "gold"), ...card("countdown", "カウントダウン", "3・2・1", "gold"), ...deviceSteps(subs));
+          break;
+        case "kimagure":
+          steps.push(reachTitle(reach, "red"), ...sp);
+          if (subs.sakura) steps.push({ t: "sakura", id: "kimagure", text: "", info: subs.sakura.info });
+          steps.push({ t: "card", id: "aura", char: "remilia", title: "最終オーラ", text: subs.aura ? subs.aura.o.label : "紫", color: subs.aura ? subs.aura.o.color : "purple", info: subs.aura ? subs.aura.info : null });
+          steps.push(...deviceSteps(subs));
+          break;
+        case "ranbu":
+          steps.push(reachTitle(reach, "red"), ...sp, ...card("allHit", "提示図柄", "全て大当り図柄", "gold"), colorStep("cutin", subs, "cutin", D.CHARS.reimu.spell), ...deviceSteps(subs));
+          break;
+        case "sukima":
+          steps.push(reachTitle(reach, "purple"), ...sp, ...deviceSteps(subs));
+          break;
+        case "zenkaiten":
+          break;
+      }
+      return steps;
+    }
+
+    // ---------------- 通常時シナリオ ----------------
+
+    function normalScenario(hold, custom) {
       const result = hold.result;
-      const out = { hit: result.kind === "hit", rush: result.rush };
+      const out = outOf(result);
       const steps = [];
 
       if (hold.color && hold.reveal === "start") steps.push({ t: "holdChange", color: hold.color, info: hold.colorInfo });
-      if (hold.breakTo) steps.push({ t: "chainBreak", color: hold.breakTo, info: hold.colorInfo });
+      if (hold.breakTo) steps.push({ t: "sealBreak", color: hold.breakTo, info: hold.colorInfo });
+
+      const imp = pickCtx(D.IMPACT[custom.impact] || D.IMPACT.off, out);
+      if (imp) steps.push({ t: "impact", info: info(D.IMPACT.off, imp) });
+
+      const lbGroup = D.LEVER_BURU[custom.leverBuru] || D.LEVER_BURU.off;
+      const lb = pickCtx(lbGroup, out);
+      if (lb) steps.push({ t: "leverBuru", color: lb.color, info: { group: `${lbGroup.name}（${custom.leverBuru === "on" ? "ON" : "OFF"}）`, label: lb.label, rel: lb.rel } });
 
       for (const g of D.NORMAL_YOKOKU) {
-        const o = pickP(g, out);
+        const o = pickCtx(g, out);
         if (!o) continue;
         const i = info(g, o);
-        if (g.id === "logo") steps.push({ t: "logo", color: o.color, info: i });
-        else if (g.id === "giji") steps.push({ t: "giji", n: o.n, rize: !!o.rize, kaneki: !!o.kaneki, info: i });
-        else if (g.id === "haikei") steps.push({ t: "bg", bg: o.bg, label: o.label, info: i });
-        else if (g.id === "hand") steps.push({ t: "hand", sound: o.sound, info: i });
-        else if (g.id === "mask") steps.push({ t: "mask", step: o.step, color: o.color, text: o.label, info: i });
-        else steps.push({ t: "card", id: g.id, title: g.name, text: o.label, color: o.color, info: i });
+        switch (g.id) {
+          case "logo": steps.push({ t: "logo", color: o.color, info: i }); break;
+          case "sakura": steps.push({ t: "sakura", id: o.id, drop: !!o.drop, text: "西行妖が咲く…", info: i }); break;
+          case "giji": steps.push({ t: "giji", n: o.n, yukari: !!o.yukari, reimu: !!o.reimu, info: i }); break;
+          case "su": steps.push({ t: "su", step: o.step, color: o.color, char: o.char, info: i }); break;
+          case "tokitome": steps.push({ t: "tokitome", color: o.color, info: i }); break;
+          case "mono": steps.push({ t: "mono", color: o.color, info: i }); break;
+          case "haikei": steps.push({ t: "bg", bg: o.bg, info: i }); break;
+          case "hand": steps.push({ t: "hand", sound: o.sound, info: i }); break;
+          default: steps.push({ t: "card", id: g.id, title: g.name, text: o.label, color: o.color, info: i });
+        }
       }
 
-      const reach = pick(D.NORMAL_REACH, out, P.spin);
+      const reach = pick(D.NORMAL_REACH, out, P.spin, S.hitRushRate);
 
       if (reach) {
         for (const g of D.NORMAL_PRE_REACH) {
-          const o = pickP(g, out);
+          const o = pickCtx(g, out);
           if (!o) continue;
           const i = info(g, o);
-          if (g.id === "nakama") steps.push({ t: "card", id: g.id, title: g.name, text: o.label, color: o.color, info: i });
-          else if (g.id === "jason") steps.push({ t: "jason", color: o.color, info: i });
-          else steps.push({ t: "zone", device: o.device, info: i });
+          if (g.id === "cirno") steps.push({ t: "cirno", color: o.color, info: i });
+          else if (g.id === "zone") steps.push({ t: "zone", device: o.device, info: i });
+          else steps.push({ t: "card", id: g.id, char: o.id === "marisa" ? "marisa" : null, title: g.name, text: o.id === "marisa" ? "霊夢なら大丈夫だぜ！" : "がんばれー！", color: o.color, info: i });
         }
       }
 
@@ -260,121 +359,74 @@
         digits = missDigits(reach);
       }
 
-      if (reach && reach.kind === "hankakuja") {
-        steps.push({ t: "kyouki", success: true, info: { group: "狂気の時予告", label: "テンパイ成功", rel: 0.81 } });
-      } else if (!reach && result.kind === "miss" && rng() < D.KYOUKI_FAIL.missRate) {
-        steps.push({ t: "kyouki", success: false, info: { group: D.KYOUKI_FAIL.name, label: "テンパイ失敗", rel: D.KYOUKI_FAIL.rel } });
+      if (reach && reach.kind === "kinki") {
+        steps.push({ t: "kyouki", success: true, info: { group: D.KYOUKI_FAIL.name, label: "テンパイ成功（禁忌SPへ）", rel: reach.rel } });
+      } else {
+        const kf = pickCtx(D.KYOUKI_FAIL, out);
+        if (kf) steps.push({ t: "kyouki", success: false, info: info(D.KYOUKI_FAIL, kf) });
       }
 
-      if (!reach || reach.kind !== "zenkaiten") steps.push({ t: "reels", digits, reach: !!reach });
-      if (reach) steps.push(...reachSteps(reach, out));
+      if (reach && reach.kind === "zenkaiten") steps.push({ t: "zenkaiten", info: { group: "リーチ", label: "全回転", rel: 1 } });
+      else steps.push({ t: "reels", digits, reach: !!reach });
+      if (reach) steps.push(...normalReachSteps(reach, out));
       steps.push({ t: "final", digits, hit: out.hit, charge: result.kind === "charge" });
-      return { steps, reach, result };
+      return { steps, reach, digits };
     }
 
-    // ---------------- RUSH中シナリオ ----------------
+    // ---------------- 弾幕RUSH中シナリオ ----------------
 
-    function rushReachSteps(reach, out) {
-      const subs = subsOf(reach, out);
-      const steps = [];
-      const title = (color) => ({ t: "reach", id: reach.id, kind: reach.kind, label: reach.label, color, info: { group: "リーチ", label: reach.label, rel: reach.rel } });
-      const card = (key, ttl, text, color) =>
-        subs[key] ? [{ t: "card", id: key, title: ttl, text, color, info: subs[key].info }] : [];
-
-      const sp = [];
-      if (reach.sp) {
-        for (const g of D.RUSH_SP_YOKOKU) {
-          const o = pickP(g, out);
-          if (o) sp.push({ t: "card", id: g.id, title: g.name, text: o.label, color: o.color, info: info(g, o) });
-        }
-      }
-
-      switch (reach.kind) {
-        case "normal":
-          steps.push({ t: "wait", ms: 1200 });
-          break;
-        case "shunkan":
-          steps.push(title("red"), ...sp, ...card("ketsui", "金木決意", "", "red"), ...deviceSteps(subs, out));
-          break;
-        case "ghoulBattle":
-          steps.push(title("red"), ...card("music", "楽曲変化", "", "gold"), ...sp, ...card("gabure", "画ブレ", "", "red"));
-          steps.push({ t: "card", id: "attack", title: "攻撃", text: subs.attack ? "一撃" : "連打", color: subs.attack ? "red" : "white", info: subs.attack ? subs.attack.info : null });
-          steps.push(...deviceSteps(subs, out));
-          break;
-        case "amon":
-          steps.push(title(subs.title ? "gold" : "red"), ...sp);
-          steps.push({ t: "card", id: "sensei", title: "最終煽り", text: subs.sensei ? "金木の先制攻撃" : "亜門の先制攻撃", color: subs.sensei ? "gold" : "white", info: subs.sensei ? subs.sensei.info : null });
-          steps.push(...deviceSteps(subs, out));
-          break;
-        case "kyuushutsu":
-          steps.push(title("white"), ...sp, ...card("light", "集光エフェクト", "大", "gold"), ...card("countdown", "カウントダウン", "", "gold"), ...deviceSteps(subs, out));
-          break;
-        case "ooguli":
-          steps.push(title("red"), ...sp, ...card("higanbana", "彼岸花", "", "red"));
-          steps.push({ t: "card", id: "aura", title: "最終オーラ", text: subs.aura ? subs.aura.o.label : "紫", color: subs.aura ? subs.aura.o.color : "purple", info: subs.aura ? subs.aura.info : null });
-          steps.push(...deviceSteps(subs, out));
-          break;
-        case "ranbu":
-          steps.push(title("red"), ...sp, ...card("allHit", "提示図柄", "全て大当り図柄", "gold"), colorStep("cutin", subs, "cutin", "金木"), ...deviceSteps(subs, out));
-          break;
-        case "hoshoku":
-          steps.push(title("red"), ...sp, ...deviceSteps(subs, out));
-          break;
-        case "zenkaiten":
-          steps.push({ t: "zenkaiten", info: { group: "リーチ", label: "全回転", rel: 1 } });
-          break;
-      }
-      return steps;
-    }
-
-    function rushScenario(hold, rushMode) {
+    function rushScenario(hold, custom) {
       const result = hold.result;
       const out = { hit: result.kind === "hit", rush: true };
       const steps = [];
-      let digits;
       let reach = null;
+      const mode = custom.rushMode || "default";
 
-      if (rushMode === "default") {
+      if (mode === "default") {
         if (hold.color && hold.reveal === "start") steps.push({ t: "holdChange", color: hold.color, info: hold.colorInfo });
         for (const g of D.RUSH_YOKOKU) {
-          const o = pickP(g, out);
+          const o = pickCtx(g, out);
           if (!o) continue;
           const i = info(g, o);
-          if (g.id === "bundan") steps.push({ t: "bundan", n: o.n, info: i });
-          else steps.push({ t: "card", id: g.id, title: g.name, text: o.word || o.label, color: o.color, info: i });
+          if (g.id === "leverBuruRush") steps.push({ t: "leverBuru", color: "red", info: i });
+          else if (g.id === "bundan") steps.push({ t: "bundan", n: o.n, info: i });
+          else if (g.id === "spellMoji") steps.push({ t: "spellMoji", word: o.word, color: o.color, info: i });
+          else steps.push({ t: "card", id: g.id, title: g.name, text: o.label, color: o.color, char: g.id === "watashi" || g.id === "miko" ? "reimu" : g.id === "dive" ? "marisa" : g.id === "saikyou" ? "cirno" : null, info: i });
         }
         reach = pick(D.RUSH_REACH, out, P.rushSpin, 1);
-      } else if (rushMode === "totsugeki") {
-        if (out.hit) steps.push({ t: "hand", sound: "high", notice: "突激", info: { group: "突激モード", label: "役物落下", rel: 1 } });
-      } else if (rushMode === "rize") {
-        if (out.hit) steps.push({ t: "notice", text: "リゼ襲来", info: { group: "リゼ襲来モード", label: hold.notice ? "入賞時告知" : "変動時告知", rel: 1 } });
-      } else if (rushMode === "tsukiyama") {
-        const o = pick(D.TSUKIYAMA_BUTTON, out, P.rushSpin, 1);
-        if (o) steps.push({ t: "zekkyou", n: o.n, hit: out.hit, info: info(D.TSUKIYAMA_BUTTON, o) });
-        else if (out.hit) steps.push({ t: "notice", text: "絶叫", info: { group: "月山絶叫モード", label: "告知", rel: 1 } });
+      } else if (mode === "totsugeki") {
+        if (out.hit) steps.push({ t: "hand", sound: "high", notice: "突撃！", info: { group: "陰陽玉突撃モード", label: "陰陽玉落下", rel: 1 } });
+      } else if (mode === "shurai") {
+        if (out.hit) steps.push({ t: "notice", text: "フラン襲来", char: "flandre", info: { group: "フラン襲来モード", label: hold.notice ? "入賞時告知" : "変動時告知", rel: 1 } });
+      } else if (mode === "renda") {
+        const o = pickCtx(D.RENDA, out);
+        if (o) steps.push({ t: "renda", n: o.n, hit: out.hit, info: info(D.RENDA, o) });
+        else if (out.hit) steps.push({ t: "notice", text: "マスタースパーク", char: "marisa", info: { group: "マスパ連打モード", label: "告知", rel: 1 } });
       }
 
+      let digits;
       if (out.hit) {
         const d = reach && reach.kind === "zenkaiten" ? 7 : 1 + rand(9);
         digits = [d, d, d];
       } else {
         digits = missDigits(reach);
       }
-      if (!reach || reach.kind !== "zenkaiten") steps.push({ t: "reels", digits, reach: !!reach, fast: rushMode !== "default" });
+      if (reach && reach.kind === "zenkaiten") steps.push({ t: "zenkaiten", info: { group: "リーチ", label: "全回転", rel: 1 } });
+      else steps.push({ t: "reels", digits, reach: !!reach, quick: mode !== "default" });
       if (reach) steps.push(...rushReachSteps(reach, out));
       steps.push({ t: "final", digits, hit: out.hit, charge: false });
-      return { steps, reach, result };
+      return { steps, reach, digits };
     }
 
     // ---------------- 大当り後 ----------------
 
-    function bonusSteps(result, digits, mode, challenge) {
+    function bonusSteps(result, digits, mode, custom) {
       const steps = [];
       if (mode === "rush") {
-        steps.push({ t: "bonus", title: "HYPER喰種BONUS 3000", rounds: 20, payout: S.payout.rush3000 });
+        steps.push({ t: "bonus", title: "異変解決BONUS", sub: "3000", rounds: 20, payout: S.payout.rush3000 });
         if (result.big) {
-          steps.push({ t: "hand", sound: "low", notice: "喰MAX", info: { group: "BONUS中", label: "喰MAXハンド作動（6000）", rel: 1 } });
-          steps.push({ t: "bonus", title: "HYPER喰種BONUS 6000", rounds: 20, payout: S.payout.rush6000 - S.payout.rush3000 });
+          steps.push({ t: "hand", sound: "low", notice: "夢想封印MAX", info: { group: "BONUS中", label: "夢想封印MAX（6000）", rel: 1 } });
+          steps.push({ t: "bonus", title: "夢想封印MAX", sub: "6000", rounds: 20, payout: S.payout.rush6000 - S.payout.rush3000 });
         }
         steps.push({ t: "rushContinue" });
         return steps;
@@ -383,18 +435,22 @@
         steps.push({ t: "charge", payout: S.payout.charge2R, promote: result.rush });
         return steps;
       }
-      steps.push({ t: "bonus", title: "HYPER喰種BONUS", rounds: 10, payout: S.payout.bonus10R });
+
+      const uo = pick(D.BONUS_URA, { hit: result.rush, rush: result.rush }, P.bonus, 1);
+      const ura = uo ? { color: uo.color, info: info(D.BONUS_URA, uo) } : { color: "white", info: null };
+      steps.push({ t: "bonus", title: "異変解決BONUS", sub: "10R", rounds: 10, payout: S.payout.bonus10R, ura });
+
       if (digits[0] === 7) {
-        steps.push({ t: "rushResult", success: true, text: "7図柄 RUSH確定" });
-      } else if (challenge === "amon") {
+        steps.push({ t: "rushResult", success: true, text: "霊夢図柄 RUSH確定" });
+      } else if ((custom.challenge || "koumakan") === "koumakan") {
         const serif = result.rush && rng() < 0.2;
-        steps.push({ t: "challenge", kind: "amon", serif, device: result.rush && rng() < 0.15 ? "vcon" : "button" });
+        steps.push({ t: "challenge", kind: "koumakan", serif, device: result.rush && rng() < 0.15 ? "lever" : "button" });
         steps.push({ t: "rushResult", success: result.rush });
       } else {
         let at = null;
         if (result.rush) {
           const r = rng();
-          at = r < 0.55 ? 2 + rand(32) : r < 0.75 ? 1 : r < 0.92 ? 0 : -1; // -1 は失敗後復活
+          at = r < 0.55 ? 2 + rand(32) : r < 0.75 ? 1 : r < 0.92 ? 0 : -1; // -1 は失敗後の復活
         }
         steps.push({ t: "challenge", kind: "ippatsu", at });
         steps.push({ t: "rushResult", success: result.rush });

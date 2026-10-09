@@ -2,63 +2,110 @@
 <html lang="ja">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
-  <meta name="theme-color" content="#0b0b0f">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#120f24">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <title>喰種パチシミュ</title>
+  <title>幻想弾幕録</title>
   <link rel="manifest" href="manifest.json">
   <link rel="icon" href="icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="icon-192.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Dela+Gothic+One&family=Yuji+Syuku&family=Zen+Kaku+Gothic+New:wght@400;700&display=swap">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <header class="top">
-    <select id="spec" aria-label="機種"></select>
-    <button id="menuBtn" class="ghost" aria-label="メニュー">☰</button>
-  </header>
+  <div id="app">
+    <div class="machine">
+      <header class="bar">
+        <div class="brand"><span class="e">e</span>東方幻想弾幕録<small>東方Project 二次創作パチンコ</small></div>
+        <button id="menuBtn" class="icon-btn" type="button" aria-label="メニュー（カスタム・設定）">☰</button>
+      </header>
 
-  <section class="stats">
-    <div><span>持ち玉</span><b id="balls">0</b></div>
-    <div><span>投資</span><b id="invested">0円</b></div>
-    <div><span>収支</span><b id="balance">0円</b></div>
-    <div><span>回転数</span><b id="spinsSinceHit">0</b></div>
-    <div><span>総回転</span><b id="spins">0</b></div>
-    <div><span>初当たり</span><b id="firstHits">0</b></div>
-  </section>
+      <div class="cabinet">
+        <div id="stage" class="stage" aria-label="液晶"></div>
+      </div>
 
-  <main id="stage" class="stage">
-    <div id="modeLabel" class="mode">通常</div>
-    <div class="reels">
-      <div class="reel" id="r0">7</div>
-      <div class="reel" id="r1">3</div>
-      <div class="reel" id="r2">5</div>
+      <div class="controls">
+        <button id="handleBtn" class="ctl handle" type="button" aria-pressed="false">
+          <span class="glyph"><i class="ball"></i><i class="ball"></i><i class="ball"></i></span>
+          <span class="lbl">打ち出し停止</span>
+          <small>ハンドル（H）</small>
+        </button>
+        <button id="pushBtn" class="ctl push" type="button">
+          <span class="glyph">PUSH</span>
+          <small>ボタン（Space）</small>
+        </button>
+        <button id="leverBtn" class="ctl lever" type="button">
+          <span class="glyph">八卦炉</span>
+          <small>レバー（L）</small>
+        </button>
+      </div>
     </div>
-    <div id="message" class="message"></div>
-    <div id="stInfo" class="st"></div>
-  </main>
 
-  <section class="controls">
-    <button id="spinBtn" class="primary">回す</button>
-    <div class="row">
-      <button id="autoBtn">オート OFF</button>
-      <button id="fastBtn">高速 OFF</button>
+    <div class="side">
+      <section class="panel" aria-labelledby="counterTitle">
+        <h2 id="counterTitle">データカウンター <small>4円・等価</small></h2>
+        <div class="counter">
+          <div><span>持ち玉</span><b id="cBalls">0</b></div>
+          <div><span>収支</span><b id="cBalance">0円</b></div>
+          <div><span>投資</span><b id="cInvest">0円</b></div>
+          <div><span>現在回転</span><b id="cNow">0</b></div>
+          <div><span>総回転</span><b id="cTotal">0</b></div>
+          <div><span>初当り</span><b id="cHits">0回</b></div>
+          <div><span>初当り確率</span><b id="cProb">—</b></div>
+          <div><span>RUSH突入</span><b id="cRush">0回</b></div>
+          <div><span>突入率</span><b id="cRushRate">—</b></div>
+          <div><span>最大連チャン</span><b id="cMax">0連</b></div>
+          <div><span>回転率</span><b id="cRate">—</b></div>
+          <div><span>総出玉</span><b id="cOut">0</b></div>
+        </div>
+        <canvas id="graph" class="graph" aria-label="差玉グラフ"></canvas>
+      </section>
+
+      <section class="panel" id="logPanel" aria-labelledby="logTitle">
+        <h2 id="logTitle">演出ログ <small>信頼度</small></h2>
+        <ul class="list" id="log"></ul>
+      </section>
+
+      <section class="panel" aria-labelledby="historyTitle">
+        <h2 id="historyTitle">大当り履歴</h2>
+        <ul class="list" id="history"></ul>
+      </section>
     </div>
-  </section>
+  </div>
 
-  <section class="history">
-    <h2>大当たり履歴</h2>
-    <ol id="history"></ol>
-  </section>
+  <div class="scrim" id="menu" hidden>
+    <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="menuTitle">
+      <div class="sheet-head">
+        <h2 id="menuTitle">メニュー</h2>
+        <button id="menuClose" type="button" class="icon-btn" aria-label="閉じる">✕</button>
+      </div>
+      <div class="tabs" id="menuTabs" role="tablist">
+        <button type="button" role="tab" data-tab="custom">カスタム</button>
+        <button type="button" role="tab" data-tab="settings">設定</button>
+        <button type="button" role="tab" data-tab="spec">スペック</button>
+        <button type="button" role="tab" data-tab="data">データ</button>
+      </div>
+      <div id="menuBody"></div>
+    </div>
+  </div>
 
-  <dialog id="menu">
-    <h2>メニュー</h2>
-    <p id="specDetail" class="detail"></p>
-    <button id="resetBtn" class="danger">データをリセット</button>
-    <button id="closeMenu">閉じる</button>
-  </dialog>
+  <div class="scrim" id="confirm" hidden>
+    <div class="confirm" role="alertdialog" aria-modal="true" aria-labelledby="confirmText">
+      <p id="confirmText">持ち玉・投資・履歴・グラフを消して最初からにします。よろしいですか？</p>
+      <div class="row">
+        <button type="button" id="confirmNo">やめる</button>
+        <button type="button" id="confirmYes" class="btn-primary">リセット</button>
+      </div>
+    </div>
+  </div>
 
-  <script src="specs.js"></script>
+  <script src="data.js"></script>
+  <script src="engine.js"></script>
+  <script src="sound.js"></script>
+  <script src="stage.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

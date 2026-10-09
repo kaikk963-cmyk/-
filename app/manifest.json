@@ -1,12 +1,12 @@
 {
-  "name": "喰種パチシミュ",
-  "short_name": "喰種パチ",
+  "name": "e東方幻想弾幕録",
+  "short_name": "幻想弾幕録",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
   "orientation": "portrait",
-  "background_color": "#0b0b0f",
-  "theme_color": "#0b0b0f",
+  "background_color": "#120f24",
+  "theme_color": "#120f24",
   "icons": [
     { "src": "icon-192.png", "sizes": "192x192", "type": "image/png" },
     { "src": "icon-512.png", "sizes": "512x512", "type": "image/png" },
