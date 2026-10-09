@@ -271,6 +271,7 @@
         if (!o) continue;
         const i = info(g, o);
         if (g.id === "spDrop") steps.push({ t: "hand", sound: "normal", timing: o.id, info: i });
+        else if (g.id === "lastSpell") steps.push({ t: "lastSpell", word: o.id === "word" ? "LAST WORD" : "LAST SPELL", color: o.color, info: i });
         else steps.push({ t: "card", id: g.id, title: g.name, text: o.label, color: o.color, info: i });
       }
       return steps;
@@ -304,10 +305,20 @@
           if (subs.strong) steps.push({ t: "sakura", id: "strong", text: "強ルートへ", info: subs.strong.info });
           steps.push(...cards, colorStep("cutin", subs, "cutin", `${D.CHARS.reimu.spell}`), ...deviceSteps(subs));
           break;
-        case "episode":
-          steps.push(...drop, reachTitle(reach, subs.title ? subs.title.o.color : "white"), ...introOf(reach), colorStep("telop", subs, "telop"));
+        case "episode": {
+          // 原作の異変をなぞる章立てのストーリーパート（タイトル色が熱いと最後の章も熱い色になる）
+          const titleColor = subs.title ? subs.title.o.color : "white";
+          const story = L.story[reach.id];
+          steps.push(...drop, reachTitle(reach, titleColor));
+          if (story) steps.push({ t: "story", bg: story.bg, chapters: story.chapters, color: titleColor });
+          if (reach.id === "shunsetsu") {
+            const haru = subs.haru;
+            steps.push({ t: "haru", level: haru ? haru.o.id : "gobu", color: haru ? haru.o.color : "white", info: haru ? haru.info : null });
+          }
+          steps.push(...introOf(reach), colorStep("telop", subs, "telop"));
           steps.push(...cards, colorStep("cutin", subs, "cutin", D.CHARS.reimu.spell), ...deviceSteps(subs));
           break;
+        }
         case "climax":
           steps.push({ t: "card", id: "hakurei", char: "reimu", title: "博麗の巫女", text: "弾幕クライマックスへ", color: "red", info: null });
           steps.push(...drop, reachTitle(reach, "red"), ...introOf(reach));
@@ -412,6 +423,12 @@
           case "mono": steps.push({ t: "mono", color: o.color, info: i }); break;
           case "haikei": steps.push({ t: "bg", bg: o.bg, info: i }); break;
           case "hand": steps.push({ t: "hand", sound: o.sound, info: i }); break;
+          case "bunbun": steps.push({ t: "bunbun", color: o.color, headline: o.headline, info: i }); break;
+          case "saisen": steps.push({ t: "saisen", item: o.item, color: o.color, line: choice(L.saisen[o.item]), info: i }); break;
+          case "hud": steps.push({ t: "hud", word: o.word, color: o.color, info: i }); break;
+          case "enkaiYokoku": steps.push({ t: "enkai", n: o.n, color: o.color, line: choice(L.enkai[o.color]), info: i }); break;
+          case "monban": steps.push({ t: "monban", wake: o.wake, color: o.color, info: i }); break;
+          case "lily": steps.push({ t: "lily", text: o.text, color: o.color, info: i }); break;
           case "kaiwa": {
             const [a, b] = choice(L.kaiwa[o.color] || L.kaiwa.white);
             steps.push(serif(a, "white", i), serif(b, o.color));
@@ -480,6 +497,8 @@
           if (g.id === "leverBuruRush") steps.push({ t: "leverBuru", color: "red", info: i });
           else if (g.id === "bundan") steps.push({ t: "bundan", n: o.n, info: i });
           else if (g.id === "spellMoji") steps.push({ t: "spellMoji", word: o.word, color: o.color, info: i });
+          else if (g.id === "getSpell") steps.push({ t: "hud", word: o.word, color: o.color, info: i });
+          else if (g.id === "world") steps.push({ t: "tokitome", color: o.color, world: true, info: i });
           else steps.push({ t: "card", id: g.id, title: g.name, text: o.label, color: o.color, char: g.id === "watashi" || g.id === "miko" ? "reimu" : g.id === "dive" ? "marisa" : g.id === "saikyou" ? "cirno" : null, info: i });
         }
         reach = pick(D.RUSH_REACH, out, P.rushSpin, 1);

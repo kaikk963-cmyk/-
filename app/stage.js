@@ -107,6 +107,19 @@
         this.parts.push({ k: "kedama", x: -20 - i * 22, y: y + (Math.random() - 0.5) * 20, vx: 110 + Math.random() * 40, vy: 0, r: 7 + Math.random() * 3, color: "#fff", life: 6, ph: Math.random() * 6 });
       }
     }
+    // 桜の花びらをまく
+    petals(n) {
+      for (let i = 0; i < n; i++) {
+        this.parts.push({ k: "petal", x: Math.random() * this.w, y: -10 - Math.random() * this.hgt * 0.5, vx: 30 + Math.random() * 60, vy: 60 + Math.random() * 60, r: 3 + Math.random() * 2.5, rot: Math.random() * 6, vr: (Math.random() - 0.5) * 6, color: Math.random() < 0.3 ? "#ffffff" : "#ffb3d1", life: 4 });
+      }
+    }
+    // 冥界の人魂。half なら妖夢の半霊（大きい白い魂）もまざる
+    wisps(n, half = false, y = this.hgt * 0.9) {
+      for (let i = 0; i < n; i++) {
+        this.parts.push({ k: "wisp", x: Math.random() * this.w, y: y + Math.random() * 30, vx: (Math.random() - 0.5) * 24, vy: -30 - Math.random() * 25, r: 4 + Math.random() * 3, color: "#a8dcff", life: 3.2, ph: Math.random() * 6 });
+      }
+      if (half) this.parts.push({ k: "wisp", x: this.w * 0.5, y, vx: 0, vy: -38, r: 11, color: "#ffffff", life: 3.2, ph: 0 });
+    }
     bats(color, n = 8, y = this.hgt * 0.88) {
       for (let i = 0; i < n; i++) {
         this.parts.push({ k: "bat", x: this.w + 20 + i * 18, y: y + (Math.random() - 0.5) * 30, vx: -150 - Math.random() * 40, vy: 0, r: 7, color, life: 6, ph: Math.random() * 6 });
@@ -190,6 +203,16 @@
           g.fill();
           g.fillStyle = "#222";
           g.beginPath(); g.arc(p.x + 2, yy - 1, 1.6, 0, 7); g.arc(p.x - 2, yy - 1, 1.6, 0, 7); g.fill();
+        } else if (p.k === "wisp") {
+          p.ph += dt * 4;
+          const xx = p.x + Math.sin(p.ph) * 6;
+          g.globalAlpha = Math.min(1, p.life) * 0.35;
+          g.fillStyle = p.color;
+          g.beginPath(); g.arc(xx, p.y, p.r * 2.4, 0, 7); g.fill();
+          g.beginPath(); g.moveTo(xx - p.r, p.y); g.quadraticCurveTo(xx - Math.sin(p.ph) * 8, p.y + p.r * 4, xx, p.y + p.r * 5); g.quadraticCurveTo(xx + p.r * 0.4, p.y + p.r * 2, xx + p.r, p.y); g.fill();
+          g.globalAlpha = Math.min(1, p.life);
+          g.beginPath(); g.arc(xx, p.y, p.r, 0, 7); g.fill();
+          g.globalAlpha = 1;
         } else if (p.k === "bat") {
           p.ph += dt * 18;
           const flap = Math.sin(p.ph) * 5;
@@ -508,7 +531,10 @@
       if (hold.preread) {
         for (const pr of hold.preread) {
           if (pr.group === "kedama") fx.kedama(pr.id === "many" ? 14 : 4);
-          else if (pr.group === "batSaki") fx.bats(pr.id === "red" ? "#ff2a4a" : "#2a2a3a", pr.id === "red" ? 14 : 7);
+          else if (pr.group === "hitodama") {
+            fx.wisps(pr.id === "few" ? 4 : 11, pr.id === "hanrei");
+            sfx("gap");
+          } else if (pr.group === "batSaki") fx.bats(pr.id === "red" ? "#ff2a4a" : "#2a2a3a", pr.id === "red" ? 14 : 7);
           else if (pr.group === "sukimaSaki") {
             const gap = add(h("div", "sukima", `<i class="ribbon" style="left:12%"></i><i class="ribbon" style="right:12%"></i>`));
             gap.style.top = "auto";
@@ -700,8 +726,8 @@
         stage.classList.add("freeze");
         const c = add(h("div", `clock-fx ${tone(st.color)}`));
         sfx("freeze");
-        const t = add(h("div", `card ${tone(st.color)}`, `${crest("sakuya")}<div class="t">時止め</div><div class="m">そして時は動き出す</div>`));
-        t.style.top = "66%";
+        const t = add(h("div", `card ${tone(st.color)}`, `${crest("sakuya")}<div class="t">${st.world ? "幻世「ザ・ワールド」" : "時止め"}</div><div class="m">${st.world ? "時よ、止まれ" : "そして時は動き出す"}</div>`));
+        t.style.top = st.world ? "44%" : "66%";
         await wait(1500);
         c.remove();
         t.remove();
@@ -714,6 +740,150 @@
         await wait(1400);
         n.remove();
         stage.classList.remove("mono");
+      },
+      // 「文々。新聞」：新聞が回転しながら飛び込んでくる
+      async bunbun(st) {
+        sfx("whoosh");
+        const n = add(h("div", `paper ${tone(st.color)}`, `<div class="mast">${crest("aya", "crest mini")}文々。新聞${st.color === "gold" ? '<b class="gogai">号外</b>' : ""}</div><div class="head">${st.headline}</div><div class="by">記者 射命丸 文</div>`));
+        await wait(450);
+        sfx("card", st.color);
+        if (st.color === "gold") flash("gold");
+        await wait(1300);
+        n.remove();
+      },
+      // 賽銭箱：上から何かが落ちてくる
+      async saisen(st) {
+        const n = add(h("div", `saisen ${tone(st.color)}`, `<i class="item ${st.item}"></i><div class="box"><span>賽 銭</span></div>`));
+        await wait(520);
+        sfx(st.item === "coin" ? "tick" : "card", st.color);
+        if (st.item === "senryo") { flash("gold"); quake(); }
+        n.classList.add("in");
+        await wait(500);
+        if (st.line) await RUN.serif({ char: st.line[0], text: st.line[1], color: st.color });
+        n.remove();
+      },
+      // 弾幕HUD：グレイズが回って、最後に文字が出る
+      async hud(st) {
+        const target = st.color === "gold" ? 999 : st.color === "red" ? 512 : 120 + rand(80);
+        const n = add(h("div", `hud ${tone(st.color)}`, `<div class="row"><span>Graze</span><b>0</b></div><div class="word"></div>`));
+        const num = n.querySelector("b");
+        const t0 = performance.now();
+        const dur = 700 * speed;
+        await new Promise((resolve) => {
+          const tick = () => {
+            const k = Math.min(1, (performance.now() - t0) / dur);
+            num.textContent = String(Math.round(target * k));
+            if (k < 1) requestAnimationFrame(tick);
+            else resolve();
+          };
+          requestAnimationFrame(tick);
+          for (let i = 0; i < 6; i++) setTimeout(() => sfx("tick"), (i * dur) / 6);
+        });
+        const w = n.querySelector(".word");
+        w.textContent = st.word;
+        w.classList.add("pop");
+        sfx("card", st.color);
+        if (st.color === "gold") flash("gold");
+        await wait(1100);
+        n.remove();
+      },
+      // 宴会：キャラが1人ずつ集まってくる
+      async enkai(st) {
+        const who = ["reimu", "marisa", "sakuya", "remilia", "youmu", "yuyuko", "yukari", "cirno", "flandre"].slice(0, st.n);
+        const n = add(h("div", `enkai ${tone(st.color)}`, `<div class="t">博麗神社で宴会</div><div class="row"></div><div class="m"></div>`));
+        const row = n.querySelector(".row");
+        for (let i = 0; i < who.length; i++) {
+          row.insertAdjacentHTML("beforeend", crest(who[i], "crest mini"));
+          sfx("tick");
+          await wait(st.n > 6 ? 150 : 230);
+        }
+        n.querySelector(".m").textContent = st.n >= 9 ? "全員集合！" : `${st.n}人`;
+        sfx("card", st.color);
+        const group = st.n >= 9 && root.GensouAssets && root.GensouAssets.url("scene:all");
+        if (group) {
+          const pic = add(h("div", "group-art", `<img src="${group}" alt="">`));
+          flash("gold");
+          await wait(1600);
+          pic.remove();
+        } else await wait(600);
+        if (st.line) await RUN.serif({ char: st.line[0], text: st.line[1], color: st.color });
+        n.remove();
+      },
+      // 「春ですよー」：春を告げる妖精が花びらをまいて横切る
+      async lily(st) {
+        fx.petals(st.color === "red" ? 60 : 24);
+        const n = add(h("div", `lily ${tone(st.color)}`, `<div class="m">${st.text}</div><div class="t">リリーホワイト</div>`));
+        sfx("card", st.color === "red" ? "red" : "white");
+        await wait(1400);
+        n.remove();
+      },
+      // 春度ゲージ：集めた春でゲージが埋まっていく（五分咲き→八分咲き→満開）
+      async haru(st) {
+        const target = st.level === "mankai" ? 100 : st.level === "hachi" ? 80 : 50;
+        const label = st.level === "mankai" ? "満開" : st.level === "hachi" ? "八分咲き" : "五分咲き";
+        const n = add(h("div", `haru ${tone(st.color)}`, `<div class="t">春度</div><div class="gauge"><i></i></div><div class="m"></div>`));
+        const bar = n.querySelector("i");
+        fx.petals(target / 2);
+        for (let v = 0; v <= target; v += 10) {
+          bar.style.width = `${v}%`;
+          sfx("tick");
+          await wait(110);
+        }
+        n.querySelector(".m").textContent = label;
+        sfx("card", st.color);
+        if (st.level === "mankai") { flash("gold"); fx.petals(80); }
+        await wait(1000);
+        n.remove();
+      },
+      // 門番：美鈴が居眠り。起き方で期待度が変わる
+      async monban(st) {
+        const n = add(h("div", `monban ${tone(st.color)}`, `${crest("meiling")}<div class="zzz">Zzz…</div><div class="m"></div>`));
+        sfx("tick");
+        await wait(900);
+        const m = n.querySelector(".m");
+        if (st.wake === "knife") {
+          n.insertAdjacentHTML("beforeend", '<i class="knife k1"></i><i class="knife k2"></i><i class="knife k3"></i>');
+          sfx("whoosh");
+          await wait(350);
+          flash("gold");
+          n.classList.add("jump");
+          m.textContent = "寝てません！";
+        } else if (st.wake === "self") {
+          n.classList.add("jump");
+          m.textContent = "はっ！";
+        } else {
+          m.textContent = "……すやぁ";
+        }
+        n.querySelector(".zzz").hidden = st.wake !== "none";
+        sfx("card", st.color);
+        await wait(1000);
+        n.remove();
+      },
+      // ラストスペル：画面が暗くなって大技の宣言
+      async lastSpell(st) {
+        stage.classList.add("dark");
+        const n = add(h("div", `lastspell ${tone(st.color)}`, `<div class="w">${st.word}</div><div class="bar"><i></i></div>`));
+        sfx("freeze");
+        await wait(250);
+        sfx("card", st.color);
+        if (st.color === "gold") flash("gold");
+        await wait(1350);
+        n.remove();
+        stage.classList.remove("dark");
+      },
+      // エピソードリーチのストーリーパート。章ごとに語り手が変わる
+      async story(st) {
+        if (st.bg) setBg(st.bg);
+        const names = ["第一章", "第二章", "終章"];
+        for (let i = 0; i < st.chapters.length; i++) {
+          const [who, text] = st.chapters[i];
+          const last = i === st.chapters.length - 1;
+          const color = last ? st.color : "white";
+          const n = add(h("div", `story ${tone(color)}`, `<div class="ch">${names[i] || ""}</div>${crest(who)}<div class="m">${text}</div>`));
+          sfx(last ? "card" : "whoosh", color);
+          await wait(last ? 1300 : 1050);
+          n.remove();
+        }
       },
       async bg(st) {
         setBg(st.bg);
@@ -1041,6 +1211,8 @@
           setBg("rush");
           fx.setMode("rush");
           flash();
+          const group = root.GensouAssets && root.GensouAssets.url("scene:all");
+          if (group) add(h("div", "group-art behind", `<img src="${group}" alt="">`));
           const n = add(h("div", "notice tone-rainbow", `<div class="rainbow-text">弾幕RUSH<br>突入</div>`));
           if (st.text) {
             const s = add(h("div", "card tone-gold", `<div class="m">${st.text}</div>`));

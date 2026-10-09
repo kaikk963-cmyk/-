@@ -695,7 +695,8 @@
   }
 
   function renderDev() {
-    let body = `<p class="note">陰陽玉落下と先バレの出方を変えられます。<b>信頼度</b>はその演出が出たときの大当り率、<b>当たり時</b>は大当りのうち何%でその演出が出るか。ハズレ時の出方はこの2つから自動で決まり、右端にだいたいの出現頻度が出ます。変更すると画面右上に DEV と表示されます。</p>`;
+    let body = `<p class="note">陰陽玉落下と先バレの出方を変えられます。<b>信頼度</b>はその演出が出たときの大当り率、<b>当たり時</b>は大当りのうち何%でその演出が出るか。ハズレ時の出方はこの2つから自動で決まり、右端にだいたいの出現頻度（いまのスペックでの値）が出ます。変更すると画面右上に DEV と表示されます。</p>`;
+    if (S.key !== "middle") body += `<p class="note">いまは<b>${S.label}</b>です。信頼度の入力欄はライトミドルでの値で、甘デジでは実機の甘デジ版と同じく「ハズレ時の出方はそのまま・当たりやすくなった分だけ信頼度が上がる」ので、入力欄の下にいまのスペックでの信頼度を出しています。</p>`;
     body += field("次の入賞を固定（1回）", "次に入賞した保留1つの結果を固定する。RUSH中はハズレ以外が大当りになる。",
       seg("dev.force", { none: "なし", rushHit: "大当り→RUSH", hit: "大当り→通常", charge: "チャージ", miss: "ハズレ" }, state.dev.force));
     body += field("先バレを強制", "保留入賞時に陰陽玉を必ず落とす（先バレのカスタムがOFFでも落ちる）。",
@@ -709,7 +710,7 @@
       const rows = d.group.options.map((o) => {
         const k = devKey(d, o);
         return `<tr><th>${o.label}${o.rushOnly ? "<br><small>RUSH直行のみ</small>" : ""}</th>
-          <td><input class="num-in" type="number" inputmode="decimal" min="0.1" max="100" step="0.1" data-dev="${k}" data-field="rel" value="${+(o.rel * 100).toFixed(2)}" aria-label="${o.label}の信頼度（%）"></td>
+          <td><input class="num-in" type="number" inputmode="decimal" min="0.1" max="100" step="0.1" data-dev="${k}" data-field="rel" value="${+(engine.baseOf(o) * 100).toFixed(2)}" aria-label="${o.label}の信頼度（%・ミドル基準）">${S.key !== "middle" && Math.abs(o.rel - engine.baseOf(o)) > 1e-6 ? `<small class="now-rel">${S.short}で${+(o.rel * 100).toFixed(1)}%</small>` : ""}</td>
           <td><input class="num-in" type="number" inputmode="decimal" min="0" max="100" step="0.1" data-dev="${k}" data-field="share" value="${+(o.share * 100).toFixed(2)}" aria-label="${o.label}の当たり時の出現割合（%）"></td>
           <td class="freq">${devFreq(o, d)}</td></tr>`;
       }).join("");
@@ -737,6 +738,7 @@
       return { key: `chara:${k}`, char: k, name: c.name, sub: d > 0 ? `図柄${d}・リーチ・カットイン` : "リーチ・予告" };
     });
     for (const [k, v] of Object.entries(D.STAGES)) slots.push({ key: `bg:${k}`, name: `背景：${v.name}`, sub: k === "shrine" ? "通常時" : "背景移行" });
+    slots.push({ key: "scene:all", name: "集合絵", sub: "宴会予告（全員集合）・RUSH突入で全面に出る" });
     return slots;
   }
 
@@ -854,8 +856,8 @@
       const d = devGroups().find((x) => x.key === gk);
       const o = d && d.group.options.find((x) => x.id === oid);
       if (!o) return;
-      // 入力された信頼度はいまのスペックでの値なので、ミドルでの値に直して保存する
-      const next = { rel: field === "rel" ? engine.toBase(d.group, v) : engine.baseOf(o), share: field === "share" ? v : o.share };
+      // 信頼度の入力欄はミドル基準の値（甘デジではそこから自動で上がる）
+      const next = { rel: field === "rel" ? v : engine.baseOf(o), share: field === "share" ? v : o.share };
       const def = devDefaults[k];
       if (Math.abs(next.rel - def.rel) < 1e-9 && Math.abs(next.share - def.share) < 1e-9) delete state.dev.overrides[k];
       else state.dev.overrides[k] = next;

@@ -185,6 +185,12 @@
       opt("few", "毛玉が横切る", 0.01, 0.05),
       opt("many", "毛玉の大群", 0.3, 0.04),
     ]),
+    // 冥界の人魂（妖々夢）。妖夢の半霊がまざると熱い
+    group("hitodama", "人魂先読み", "spin", [
+      opt("few", "人魂がただよう", 0.02, 0.04),
+      opt("many", "人魂の群れ", 0.4, 0.025),
+      opt("hanrei", "半霊がまざる", 0.75, 0.01),
+    ]),
   ];
 
   // 変動中の予告（発生順）
@@ -240,6 +246,42 @@
       opt("normal", "通常", 0.25, 0.06, { color: "white" }),
       opt("red", "赤", 0.8, 0.05, { color: "red" }),
     ]),
+    // 以下、原作の設定から作った予告（中身の文章はすべてオリジナル）
+    // 射命丸文の「文々。新聞」。見出しが号外なら熱い
+    group("bunbun", "「文々。新聞」号外予告", "spin", [
+      opt("white", "白見出し", 0.03, 0.05, { color: "white", headline: "博麗神社の賽銭箱、本日も空" }),
+      opt("red", "赤見出し", 0.32, 0.06, { color: "red", headline: "幻想郷上空に謎の紅い霧" }),
+      opt("gold", "号外", 0.82, 0.03, { color: "gold", headline: "号外！博麗の巫女、異変解決へ" }),
+    ]),
+    // 博麗神社の賽銭箱。いつも空なのが原作のお約束
+    group("saisen", "賽銭箱予告", "spin", [
+      opt("coin", "一円玉", 0.02, 0.04, { color: "white", item: "coin" }),
+      opt("satsu", "お札", 0.3, 0.05, { color: "red", item: "satsu" }),
+      opt("senryo", "千両箱", 0.88, 0.02, { color: "gold", item: "senryo" }),
+    ]),
+    // 原作シューティングの画面表示（グレイズ・エクステンド・スペルカードボーナス）
+    group("hud", "弾幕HUD予告", "spin", [
+      opt("graze", "GRAZE", 0.04, 0.05, { color: "white", word: "GRAZE" }),
+      opt("extend", "Extend!!", 0.42, 0.05, { color: "red", word: "Extend!!" }),
+      opt("bonus", "Spell Card Bonus!!", 0.9, 0.03, { color: "gold", word: "Spell Card Bonus!!" }),
+    ]),
+    // 博麗神社の宴会（萃夢想）。集まる人数が多いほど熱い
+    group("enkaiYokoku", "宴会予告", "spin", [
+      opt("n3", "3人", 0.03, 0.04, { color: "white", n: 3 }),
+      opt("n6", "6人", 0.3, 0.05, { color: "red", n: 6 }),
+      opt("all", "全員集合", 0.8, 0.03, { color: "gold", n: 9 }),
+    ]),
+    // 春を告げる妖精リリーホワイト（妖々夢）。春の濃さで期待度が変わる
+    group("lily", "「春ですよー」予告", "spin", [
+      opt("white", "春ですよー", 0.05, 0.04, { color: "white", text: "春ですよー" }),
+      opt("pink", "春ですよーーっ！！", 0.5, 0.04, { color: "red", text: "春ですよーーっ！！" }),
+    ]),
+    // 紅魔館の門番・美鈴。居眠り→咲夜のナイフで起こされるのが定番
+    group("monban", "門番予告", "spin", [
+      opt("sleep", "居眠り", 0.01, 0.02, { color: "white", wake: "none" }),
+      opt("wake", "飛び起きる", 0.25, 0.03, { color: "red", wake: "self" }),
+      opt("knife", "咲夜のナイフで起床", 0.7, 0.02, { color: "gold", wake: "knife" }),
+    ]),
     group("hand", "陰陽玉落下（変動中）", "spin", [
       opt("normal", "通常音", 0.72, 0.4, { sound: "normal" }),
       opt("low", "低音", 1, 0.04, { sound: "low" }),
@@ -275,6 +317,11 @@
     group("kesshin", "霊夢の決意", "sp", [
       opt("kaiketsu", "「異変は私が解決する」", 0.73, 0.1, { color: "red" }),
       opt("hakurei", "「博麗の巫女を舐めないで」", 1, 0.02, { color: "gold" }),
+    ]),
+    // 原作のボス戦の最後の大技（ラストスペル）／永夜抄のラストワード
+    group("lastSpell", "ラストスペル予告", "sp", [
+      opt("last", "LAST SPELL", 0.78, 0.1, { color: "red" }),
+      opt("word", "LAST WORD", 1, 0.02, { color: "gold" }),
     ]),
   ];
 
@@ -336,6 +383,11 @@
     opt("vsMeiling", "バトルSPリーチ vs美鈴", 0.32, 0.09, { kind: "battle", char: "meiling", sp: true, subs: battleSubs(0.46, 0.48, 0.75, 0.95, 0.65, 0.71) }),
     opt("enkai", "エピソードリーチ 宴会", 0.51, 0.16, { kind: "episode", char: "marisa", sp: true, subs: episodeSubs(0.65, 0.65, 0.78) }),
     opt("kouma", "エピソードリーチ 紅霧異変", 0.9, 0.1, { kind: "episode", char: "remilia", sp: true, subs: episodeSubs(0.92, 0.93, 0.95) }),
+    opt("shunsetsu", "エピソードリーチ 春雪異変", 0.75, 0.09, { kind: "episode", char: "yuyuko", sp: true, subs: [
+      // 妖々夢の「春度」。集めた春でゲージが埋まり、満開なら大当り濃厚
+      group("haru", "春度ゲージ", "self", [opt("hachi", "八分咲き", 0.85, 0.4, { color: "red" }), opt("mankai", "満開", 1, 0.12, { color: "gold" })]),
+      ...episodeSubs(0.8, 0.82, 0.88),
+    ] }),
     opt("cxSakuya", "弾幕クライマックスリーチ vs咲夜", 0.73, 0.12, { kind: "climax", char: "sakuya", sp: true, subs: climaxSubs(0.86, 0.89, 0.88) }),
     opt("cxRemilia", "弾幕クライマックスリーチ vsレミリア", 0.93, 0.08, { kind: "climax", char: "remilia", sp: true, subs: climaxSubs(0.95, 0.95, 0.95) }),
     opt("yukariSp", "八雲紫SP", 0.52, 0.05, { kind: "revive", char: "yukari", sp: true, subs: [deviceGroup(), yakuTiming] }),
@@ -391,6 +443,13 @@
     group("tansaku", "探索テンパイ予告", "rushSpin", [
       opt("white", "白", 0.32, 0.15, { color: "white" }),
       opt("red", "赤", 0.89, 0.08, { color: "red" }),
+    ]),
+    group("getSpell", "スペルカード取得予告", "rushSpin", [
+      opt("get", "Get Spell Card", 0.45, 0.05, { color: "white", word: "Get Spell Card" }),
+      opt("bonus", "Get Spell Card Bonus!!", 1, 0.015, { color: "gold", word: "Get Spell Card Bonus!!" }),
+    ]),
+    group("world", "「ザ・ワールド」予告", "rushSpin", [
+      opt("red", "時が止まる", 0.72, 0.03, { color: "red" }),
     ]),
   ];
 
@@ -510,16 +569,21 @@
         [["cirno", "霊夢！あたいと勝負しろ！"], ["reimu", "はいはい、また今度ね"]],
         [["sanae", "霊夢さん、お参りに来ましたよ"], ["reimu", "あら珍しい。お賽銭も置いていきなさい"]],
         [["aya", "今日の幻想郷は平和ですねぇ"], ["reimu", "記事にならなくて残念だったわね"]],
+        [["rumia", "そーなのかー"], ["reimu", "……何が？"]],
+        [["patchouli", "図書館の本、また減ってるわ"], ["marisa", "借りてるだけだぜ。死ぬまでな"]],
       ],
       red: [
         [["marisa", "おい霊夢、空が紅いぜ"], ["reimu", "……異変ね。行くわよ"]],
         [["sakuya", "お嬢様がお待ちですわ"], ["reimu", "上等じゃない。案内しなさい"]],
         [["yukari", "今夜の幻想郷は、少し騒がしいわね"], ["reimu", "あんたが言うと嫌な予感しかしないわ"]],
         [["flandre", "ねえ、お姉様より強いの？"], ["reimu", "試してみる？"]],
+        [["youmu", "幽々子様のために、春を集めているんです"], ["reimu", "どうりで寒いわけね"]],
+        [["meiling", "……はっ！寝てません、寝てませんよ！"], ["sakuya", "あとでお話がありますわ"]],
       ],
       gold: [
         [["marisa", "霊夢、ここは任せたぜ！"], ["reimu", "ええ。この異変、ここで終わらせる！"]],
         [["remilia", "運命は、もう決まっているのよ"], ["reimu", "だったら、その運命ごと撃ち抜くわ"]],
+        [["yuyuko", "西行妖が咲いたら、きっと素敵よ"], ["reimu", "咲かせないわ。絶対に"]],
         [["yukari", "準備はいいかしら、博麗の巫女"], ["reimu", "いつでもいいわよ。全部まとめて片付ける"]],
       ],
     },
@@ -568,6 +632,33 @@
     charge: [["reimu", "霊力補給、っと"]],
     promote: [["yukari", "ふふ、おまけよ"]],
     koumakan: [["remilia", "この館を抜けられるかしら？"]],
+    // 賽銭箱予告の霊夢の反応
+    saisen: {
+      coin: [["reimu", "……一円。気持ちだけ受け取っておくわ"], ["reimu", "チャリン、ね。ないよりはマシよ"]],
+      satsu: [["reimu", "お札！？今日はいい日になりそうね"], ["reimu", "ちょっと待って、誰がこんなに？"]],
+      senryo: [["reimu", "せ、千両箱……！？これは異変より大事件よ"], ["reimu", "これで神社の屋根が直せるわ！"]],
+    },
+    // 宴会予告
+    enkai: {
+      white: [["marisa", "今夜も宴会だぜ！"], ["reimu", "……で、片付けは誰がするの？"]],
+      red: [["yuyuko", "あら、おいしそうな匂いがするわね"], ["sakuya", "お嬢様のお席をご用意しますわ"]],
+      gold: [["yukari", "ふふ、みんな萃まったわね"], ["remilia", "今夜は特別に、最後まで付き合ってあげる"]],
+    },
+    // エピソードリーチのストーリーパート（原作の異変の流れをなぞる。文章はオリジナル）
+    story: {
+      enkai: {
+        bg: "shrine",
+        chapters: [["reimu", "三日おきに、なぜか宴会が開かれる"], ["marisa", "宴会のたびに、妙な霧が萃まってくるぜ"], ["yukari", "宴の主は……霧の中にいるわ"]],
+      },
+      kouma: {
+        bg: "koumakan",
+        chapters: [["reimu", "幻想郷が、紅い霧に覆われた"], ["meiling", "湖の向こうの館へようこそ。通しませんけど"], ["remilia", "紅い月の下で、館の主が待っている"]],
+      },
+      shunsetsu: {
+        bg: "meikai",
+        chapters: [["reimu", "五月なのに、雪が止まない"], ["youmu", "集めた春は、冥界へ運ばせてもらいます"], ["yuyuko", "西行妖を、満開にしてみたいのよ"]],
+      },
+    },
   };
 
   const data = {

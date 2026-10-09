@@ -827,3 +827,102 @@ button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px s
 .spec-btn[data-spec="ama99"] { color: #7fe0ff; border-color: #7fe0ff; }
 .spec-btn[data-spec="ama"] { color: #8dff9e; border-color: #8dff9e; }
 .toast { position: absolute; left: 50%; top: 6%; transform: translateX(-50%); z-index: 6; padding: 8px 14px; border-radius: 999px; background: rgba(10, 8, 22, 0.92); border: 1px solid var(--gold); color: #fff; font-size: 13px; font-weight: 700; white-space: nowrap; pointer-events: none; }
+
+/* ---- 原作設定の予告 ---- */
+.crest.mini { display: inline-block; width: 9cqw; max-width: 30px; vertical-align: middle; }
+.crest.mini svg, .crest.mini img { width: 100%; height: auto; display: block; }
+
+/* 文々。新聞 */
+.paper {
+  left: 12%; right: 12%; top: 20%;
+  padding: 8px 10px 10px;
+  background: #f3ecd9; color: #241c12;
+  border-radius: 4px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.6), 0 0 0 3px var(--tone, #fff);
+  animation: paperIn 0.45s cubic-bezier(0.2, 1.2, 0.4, 1) both;
+}
+.paper .mast { display: flex; align-items: center; gap: 6px; font-family: var(--font-display); font-size: 5cqw; border-bottom: 2px solid #241c12; padding-bottom: 3px; }
+.paper .gogai { margin-left: auto; background: #d4142a; color: #fff; padding: 1px 8px; border-radius: 3px; font-size: 5.5cqw; transform: rotate(-6deg); }
+.paper .head { font-family: var(--font-display); font-size: clamp(15px, 7.4cqw, 26px); line-height: 1.25; margin: 6px 0 4px; color: #120c06; text-wrap: balance; }
+.paper.tone-red .head { color: #b3001b; }
+.paper.tone-gold .head { color: #b3001b; text-shadow: 0 0 1px #000; }
+.paper .by { font-size: 3.2cqw; text-align: right; color: #6a5a40; }
+@keyframes paperIn { from { transform: rotate(-540deg) scale(0.1); opacity: 0; } }
+
+/* 賽銭箱 */
+.saisen { left: 0; right: 0; top: 10%; bottom: 22%; }
+.saisen .box {
+  position: absolute; left: 30%; right: 30%; bottom: 0; height: 30%;
+  background: linear-gradient(#8a4b22, #5b2d12); border: 3px solid #2f170a; border-radius: 4px;
+  display: grid; place-items: center; box-shadow: 0 0 20px var(--tone, #fff);
+}
+.saisen .box span { font-family: var(--font-display); color: #f6e2b8; font-size: 6cqw; letter-spacing: 0.2em; }
+.saisen .item { position: absolute; left: 50%; top: 0; transform: translateX(-50%); animation: itemFall 0.55s ease-in both; }
+.saisen .item.coin { width: 6cqw; height: 6cqw; border-radius: 50%; background: radial-gradient(#e8e8f0, #8f8f9a); border: 1px solid #555; }
+.saisen .item.satsu { width: 16cqw; height: 8cqw; background: linear-gradient(90deg, #e9f2e0, #c5d8b7); border: 2px solid #ff3b52; border-radius: 2px; }
+.saisen .item.senryo { width: 24cqw; height: 15cqw; background: linear-gradient(#ffe27a, #c98a00); border: 2px solid #6b4500; border-radius: 3px; box-shadow: 0 0 24px #ffd257; }
+.saisen.in .box { animation: boxHop 0.3s ease-out; }
+@keyframes itemFall { from { top: -20%; } to { top: 58%; } }
+@keyframes boxHop { 50% { transform: translateY(-6%) scale(1.05); } }
+
+/* 弾幕HUD（原作シューティングの表示風） */
+.hud { right: 4%; top: 6%; left: 4%; text-align: right; font-family: var(--font-num, monospace); }
+.hud .row { display: inline-flex; gap: 10px; align-items: baseline; padding: 4px 10px; background: rgba(0, 0, 30, 0.7); border: 1px solid #8fb4ff; border-radius: 4px; color: #cfe0ff; font-size: 4.4cqw; }
+.hud .row b { color: #fff; font-size: 6cqw; min-width: 4ch; text-align: right; }
+.hud .word { margin-top: 22%; text-align: center; white-space: nowrap; font-family: var(--font-display); font-size: clamp(16px, 8.4cqw, 32px); color: var(--tone, #fff); text-shadow: 0 0 12px var(--tone, #fff); opacity: 0; font-style: italic; }
+.hud .word.pop { animation: noticeIn 0.45s cubic-bezier(0.2, 1.5, 0.4, 1) both; opacity: 1; }
+
+/* 宴会 */
+.enkai { left: 5%; right: 5%; top: 24%; text-align: center; padding: 8px; border-radius: 12px; background: rgba(40, 10, 20, 0.82); border: 2px solid var(--tone, #fff); box-shadow: 0 0 18px var(--tone, #fff); }
+.enkai .t { font-size: 3.6cqw; color: var(--muted); letter-spacing: 0.1em; }
+.enkai .row { display: flex; justify-content: center; flex-wrap: wrap; gap: 3px; margin: 6px 0; min-height: 9cqw; }
+.enkai .row .crest { animation: cardIn 0.25s ease-out both; }
+.enkai .m { font-family: var(--font-display); font-size: clamp(16px, 9cqw, 30px); color: var(--tone, #fff); min-height: 1.2em; }
+
+/* 門番 */
+.monban { left: 18%; right: 18%; top: 18%; text-align: center; padding: 8px 6px; border-radius: 14px; background: rgba(12, 30, 20, 0.85); border: 2px solid var(--tone, #fff); box-shadow: 0 0 18px var(--tone, #fff); overflow: hidden; }
+.monban > .crest { width: 24cqw; max-width: 90px; margin: 0 auto; display: block; }
+.monban .zzz { font-family: var(--font-display); font-size: 7cqw; color: #cfe0ff; animation: zzz 1s ease-in-out infinite; }
+.monban .m { font-family: var(--font-display); font-size: clamp(18px, 9cqw, 32px); color: var(--tone, #fff); text-shadow: 0 0 12px var(--tone, #fff); min-height: 1.2em; }
+.monban.jump > .crest { animation: jump 0.4s ease-out; }
+.monban .knife { position: absolute; top: 22%; width: 22cqw; height: 2cqw; background: linear-gradient(90deg, #8a8a99 0 30%, #f2f4ff 30%); clip-path: polygon(0 30%, 80% 0, 100% 50%, 80% 100%, 0 70%); animation: knife 0.35s ease-in both; }
+.monban .knife.k2 { top: 42%; animation-delay: 0.06s; }
+.monban .knife.k3 { top: 54%; animation-delay: 0.12s; }
+@keyframes knife { from { left: -120%; } to { left: 20%; } }
+@keyframes zzz { 50% { transform: translateY(-4px); opacity: 0.6; } }
+@keyframes jump { 40% { transform: translateY(-18%); } }
+
+/* ラストスペル */
+.stage.dark .reels, .stage.dark .bg { filter: brightness(0.3) saturate(0.6); transition: filter 0.2s; }
+.lastspell { left: 0; right: 0; top: 34%; text-align: center; }
+.lastspell .w { white-space: nowrap; font-family: var(--font-display); font-size: clamp(20px, 11cqw, 44px); letter-spacing: 0.06em; color: var(--tone, #fff); text-shadow: 0 0 18px var(--tone, #fff), 0 0 40px var(--tone, #fff); animation: noticeIn 0.5s cubic-bezier(0.2, 1.5, 0.4, 1) both; }
+.lastspell .bar { margin: 8px auto 0; width: 70%; height: 6px; background: rgba(255, 255, 255, 0.2); border-radius: 3px; overflow: hidden; }
+.lastspell .bar i { display: block; height: 100%; background: var(--tone, #fff); animation: spellBar 1.5s linear both; }
+@keyframes spellBar { from { width: 100%; } to { width: 0; } }
+
+/* エピソードリーチのストーリー */
+.story { left: 6%; right: 6%; top: 18%; text-align: center; padding: 10px 12px 14px; background: linear-gradient(rgba(6, 4, 16, 0.2), rgba(6, 4, 16, 0.88) 30%); border-top: 1px solid var(--tone, #fff); border-bottom: 1px solid var(--tone, #fff); animation: telopIn 0.35s ease-out both; }
+.story .ch { font-size: 3.4cqw; letter-spacing: 0.3em; color: var(--tone, #fff); opacity: 0.85; }
+.story > .crest { width: 16cqw; max-width: 60px; margin: 4px auto; display: block; }
+.story .m { font-family: "Yuji Syuku", var(--font-display); font-size: clamp(15px, 7.6cqw, 26px); line-height: 1.35; color: var(--tone, #fff); text-wrap: balance; }
+
+/* 「春ですよー」 */
+.lily { left: 0; right: 0; top: 36%; text-align: center; }
+.lily .m { font-family: var(--font-display); font-size: clamp(20px, 11cqw, 40px); color: #ffd6e8; text-shadow: 0 0 12px #ff7ab8, 0 0 30px var(--tone, #ff7ab8); white-space: nowrap; animation: lilyIn 1.4s ease-out both; }
+.lily .t { font-size: 3.4cqw; color: #fff; opacity: 0.8; }
+@keyframes lilyIn { from { transform: translateX(-60%); opacity: 0; } 30% { transform: translateX(0); opacity: 1; } }
+
+/* 春度ゲージ */
+.haru { left: 10%; right: 10%; top: 62%; text-align: center; padding: 6px 10px 8px; border-radius: 10px; background: rgba(40, 10, 40, 0.85); border: 2px solid var(--tone, #fff); box-shadow: 0 0 16px var(--tone, #fff); }
+.haru .t { font-size: 3.4cqw; letter-spacing: 0.3em; color: #ffd6e8; }
+.haru .gauge { height: 10px; margin: 4px 0; border-radius: 5px; background: rgba(255, 255, 255, 0.15); overflow: hidden; }
+.haru .gauge i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, #ffb3d1, #ff5aa5, var(--tone, #fff)); transition: width 0.1s linear; }
+.haru .m { font-family: var(--font-display); font-size: clamp(16px, 8cqw, 28px); color: var(--tone, #fff); min-height: 1.2em; }
+
+/* 取り込んだ集合絵 */
+.group-art { inset: 0; z-index: 2; animation: groupIn 0.4s ease-out both; }
+.group-art img { width: 100%; height: 100%; object-fit: cover; }
+.group-art.behind { z-index: 0; }
+.group-art.behind img { filter: brightness(0.75); }
+@keyframes groupIn { from { transform: scale(1.25); opacity: 0; } }
+.now-rel { display: block; font-size: 10px; color: var(--gold); margin-top: 2px; white-space: nowrap; }
