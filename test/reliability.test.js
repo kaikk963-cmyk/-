@@ -1,10 +1,14 @@
 // 演出の信頼度がデータの rel どおりに出るかをモンテカルロで確認する。
-// 実行: node test/reliability.test.js [通常時の回転数]
+// 実行: node test/reliability.test.js [通常時の回転数] [スペック middle|ama99|ama]
+// 甘デジなどでは、ハズレ時の出方はそのままで信頼度が上がる。その上がった信頼度どおりに出るかを確かめる。
 const D = require("../app/data.js");
 const { createEngine } = require("../app/engine.js");
 
 const N = +process.argv[2] || 2_000_000;
+const specKey = process.argv[3] || "middle";
+Object.assign(D.SPEC, D.SPECS[specKey], { key: specKey });
 const eng = createEngine(D);
+console.log(`スペック: ${D.SPEC.label}`);
 
 function collector() {
   const stats = new Map();

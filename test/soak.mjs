@@ -18,6 +18,8 @@ const CASES = [
   { board: "on", rushMode: "totsugeki", senbare: "s90", sakiyomi: "atsu", challenge: "ippatsu", leverBuru: "on", impact: "on" },
   { board: "off", rushMode: "shurai", senbare: "s40", sakiyomi: "chance", challenge: "ippatsu" },
   { board: "off", rushMode: "renda", senbare: "off", sakiyomi: "none", challenge: "koumakan" },
+  { board: "on", spec: "ama99", rushMode: "default", senbare: "s40", sakiyomi: "osusume", challenge: "koumakan" },
+  { board: "on", spec: "ama", rushMode: "shurai", senbare: "ex", sakiyomi: "chance", challenge: "ippatsu" },
 ];
 
 let failed = 0;
@@ -31,7 +33,7 @@ for (const c of CASES) {
     const st = {
       v: 1,
       custom: { senbare: c.senbare, sakiyomi: c.sakiyomi, leverBuru: c.leverBuru || "off", impact: c.impact || "off", rushMode: c.rushMode, challenge: c.challenge },
-      settings: { board: c.board, speed: "turbo", autoPush: "on", sound: "off", strength: 40 },
+      settings: { board: c.board, speed: "turbo", autoPush: "on", sound: "off", strength: 40, spec: c.spec || "middle" },
       dev: { force: "rushHit", senbare: "off", overrides: {} },
       balls: 0, invested: 0, totalOut: 0, usedBalls: 0, fired: 0, returns: 0,
       spins: 0, sinceBonus: 0, rushSpins: 0, hits: 0, charges: 0, rushEntries: 0, rushHits: 0,
@@ -54,7 +56,7 @@ for (const c of CASES) {
     if (prog !== lastSpins) { lastSpins = prog; lastProgress = Date.now(); }
     else if (Date.now() - lastProgress > 25000) { stuck = true; break; }
     if (s.holds.length > 4 || s.rushHolds.length > 4) bad.push("保留が4個を超えた");
-    if (s.stLeft < 0 || s.stLeft > 130) bad.push(`ST残りが範囲外 ${s.stLeft}`);
+    if (s.stLeft < 0 || s.stLeft > ({ ama: 40, ama99: 64 }[c.spec] || 130)) bad.push(`ST残りが範囲外 ${s.stLeft}`);
     if (s.balls < 0) bad.push(`持ち玉がマイナス ${s.balls}`);
   }
   await page.click("#handleBtn");

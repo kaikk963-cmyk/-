@@ -8,7 +8,7 @@
   const fmt = (n) => Math.round(n).toLocaleString("ja-JP");
 
   const DEFAULT_CUSTOM = { senbare: "s40", sakiyomi: "osusume", leverBuru: "off", impact: "off", rushMode: "default", challenge: "koumakan" };
-  const DEFAULT_SETTINGS = { boardV: 5, board: "on", shot: "left", autoShot: "on", leftStrength: 45, rightStrength: 90, hesoOpen: 2.25, rate: 18, speed: "real", autoPush: "off", sound: "on", bgm: "off", volume: 0.7, vibe: "on", showRel: "on", presetYakumono: "std", presetSenbare: "std" };
+  const DEFAULT_SETTINGS = { boardV: 5, board: "on", shot: "left", autoShot: "on", leftStrength: 45, rightStrength: 90, hesoOpen: 2.25, rate: 18, speed: "real", autoPush: "off", sound: "on", bgm: "off", volume: 0.7, vibe: "on", showRel: "on", presetYakumono: "std", presetSenbare: "std", spec: "middle" };
   const SPEEDS = { real: 1, slow: 1.35, normal: 1, fast: 0.5, turbo: 0.2 };
   const SPEED_LABEL = { real: "実機", normal: "標準", fast: "高速", turbo: "爆速" };
   const DEFAULT_DEV = { overrides: {}, force: "none", senbare: "off", rush6000: null, dropBtn: "on" };
@@ -255,8 +255,8 @@
       };
       roundHook = () => {
         count++;
-        paid += 15;
-        onPayout(15);
+        paid += S.attackerPay;
+        onPayout(S.attackerPay);
         onCount(count, paid);
         if (count >= 10 && !closing) closing = setTimeout(finish, 250 * speedFactor());
       };
@@ -366,7 +366,7 @@
       state.chainBalls += got;
       state.stLeft = S.stSpins;
       state.maxChain = Math.max(state.maxChain, state.chain);
-      addHistory({ type: "rush", label: `弾幕RUSH ${state.chain}連目${hold.result.big ? "（6000）" : ""}`, balls: got, at: used });
+      addHistory({ type: "rush", label: `弾幕RUSH ${state.chain}連目${hold.result.big ? `（${S.labels.big}）` : ""}`, balls: got, at: used });
     } else if (state.stLeft <= 0) {
       await endRush();
     }
@@ -600,20 +600,65 @@
   let devDefaults = null;
   const devKey = (d, o) => `${d.key}:${o.id}`;
 
+  // 開発者モードの初期値（信頼度はミドルでの値。甘デジなどではここから自動で上がる）
   function snapshotDevDefaults() {
     devDefaults = { rush6000: S.rush6000Rate };
-    for (const d of devGroups()) for (const o of d.group.options) devDefaults[devKey(d, o)] = { rel: o.rel, share: o.share };
+    for (const d of devGroups()) for (const o of d.group.options) devDefaults[devKey(d, o)] = { rel: engine.baseOf(o), share: o.share };
+  }
+
+  // スペック（ミドル・99ver.・甘デジ）を当てはめる
+  function applySpec() {
+    const key = D.SPECS[state.settings.spec] ? state.settings.spec : "middle";
+    Object.assign(S, D.SPECS[key], { key });
+    devDefaults.rush6000 = D.SPECS[key].rush6000Rate;
+    if (state.mode === "rush") state.stLeft = Math.min(state.stLeft, S.stSpins);
+    const b = $("specBtn");
+    if (b) {
+      b.textContent = S.short;
+      b.dataset.spec = key;
+      b.setAttribute("aria-label", `スペック：${S.label}（押すと切り替え）`);
+    }
+  }
+
+  // 等価ボーダー（1000円あたりの回転数）。RUSH中・保留のロス分として少し上乗せする
+  function border() {
+    const c = 1 - Math.pow(1 - S.rushProb, S.stSpins);
+    const per = S.payout.rush3000 * (1 - S.rush6000Rate) + S.payout.rush6000 * S.rush6000Rate;
+    const rush = (c / (1 - c)) * per;
+    const e = S.hitProb * (S.payout.bonus10R + S.hitRushRate * rush) + S.chargeProb * (S.payout.charge2R + S.chargeRushRate * rush);
+    return (S.rent.balls / e) * 1.045;
+  }
+
+  function setSpec(key) {
+    if (!D.SPECS[key] || key === state.settings.spec) return;
+    state.settings.spec = key;
+    applyDev();
+    save();
+    render();
+    showToast(`${D.SPECS[key].label}に切り替えました`);
+    if (!$("menu").hidden) renderMenu();
+  }
+
+  let toastTimer = null;
+  function showToast(text) {
+    const t = $("toast");
+    t.textContent = text;
+    t.hidden = false;
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => (t.hidden = true), 2200);
   }
 
   function applyDev() {
+    applySpec();
     for (const d of devGroups()) {
       for (const o of d.group.options) {
         const v = state.dev.overrides[devKey(d, o)] || devDefaults[devKey(d, o)];
-        o.rel = v.rel;
+        engine.setBase(o, v.rel);
         o.share = v.share;
       }
     }
     S.rush6000Rate = state.dev.rush6000 ?? devDefaults.rush6000;
+    engine.recalc();
   }
 
   const devActive = () =>
@@ -678,7 +723,7 @@
     body += field("ハンドルの強さ（物理盤面）", "左打ち・右打ちを選んだときの打ち出しの強さ（0〜100）。左打ちは35〜55あたりで、玉が盤面の上まで上がってから左側に落ちる。",
       `<div class="drop-btns" style="grid-template-columns:auto 1fr auto 1fr;align-items:center">左<input class="num-in" type="number" min="0" max="100" step="1" data-strength="leftStrength" value="${state.settings.leftStrength}" aria-label="左打ちの強さ">右<input class="num-in" type="number" min="0" max="100" step="1" data-strength="rightStrength" value="${state.settings.rightStrength}" aria-label="右打ちの強さ"></div>`);
     body += field("ヘソ釘の開き（物理盤面）", "大きいほどヘソで弾かれにくく、よく回る。標準は2.25（約20回転/1000円）。", `<input id="hesoRange" class="range" type="range" min="0.5" max="2.5" step="0.25" value="${state.settings.hesoOpen}">`, `<b id="hesoVal">${state.settings.hesoOpen}</b>`);
-    body += field("夢想封印MAX（6000発）の割合", "RUSH中の大当りのうち、BONUS中に陰陽玉が落ちて6000発になる割合。",
+    body += field(`夢想封印MAX（${S.labels.big}）の割合`, `RUSH中の大当りのうち、BONUS中に陰陽玉が落ちて${S.labels.big}になる割合（スペックごとの標準は${Math.round(devDefaults.rush6000 * 100)}%）。`,
       `<input class="num-in wide" type="number" inputmode="decimal" min="0" max="100" step="0.5" data-dev="rush6000" value="${+(big * 100).toFixed(2)}" aria-label="6000発の割合（%）">`, `<b>${+(big * 100).toFixed(1)}%</b>`);
     body += `<div class="field"><button type="button" class="btn-danger" id="devReset">すべて元の値に戻す</button></div>`;
     return body;
@@ -809,7 +854,8 @@
       const d = devGroups().find((x) => x.key === gk);
       const o = d && d.group.options.find((x) => x.id === oid);
       if (!o) return;
-      const next = { rel: o.rel, share: o.share, [field]: v };
+      // 入力された信頼度はいまのスペックでの値なので、ミドルでの値に直して保存する
+      const next = { rel: field === "rel" ? engine.toBase(d.group, v) : engine.baseOf(o), share: field === "share" ? v : o.share };
       const def = devDefaults[k];
       if (Math.abs(next.rel - def.rel) < 1e-9 && Math.abs(next.share - def.share) < 1e-9) delete state.dev.overrides[k];
       else state.dev.overrides[k] = next;
@@ -980,7 +1026,7 @@
       body += field("RUSH突入チャレンジ", D.CHALLENGES[c.challenge].desc, seg("custom.challenge", Object.fromEntries(Object.entries(D.CHALLENGES).map(([k, v]) => [k, v.name])), c.challenge));
     } else if (tab === "settings") {
       body = field("玉の物理演算（盤面）", "ONにすると、盤面に玉を打って、ヘソに入った玉だけが回転になる。ハンドルの強さで回り方が変わる。OFFにすると下の回転率どおりに回る。", seg("settings.board", { on: "ON", off: "OFF" }, st.board));
-      body += field("回転率（1000円あたり）", "ヘソへの入賞しやすさ。等価交換のボーダーは約17.4回転。保留が満タンのときの入賞は無駄になるので、実測はこれより少し下がる。",
+      body += field("回転率（1000円あたり）", `ヘソへの入賞しやすさ。いまのスペック（${S.label}）の等価ボーダーは約${border().toFixed(1)}回転。保留が満タンのときの入賞は無駄になるので、実測はこれより少し下がる。`,
         `<input id="rateRange" class="range" type="range" min="12" max="26" step="0.5" value="${st.rate}">`, `<b id="rateVal">${st.rate}回転</b>`).replace("ヘソへの入賞しやすさ。", "物理盤面がOFFのときのヘソへの入賞しやすさ。");
       body += field("演出スピード", "「実機」は実際の台に近い時間で動く。保留が少ないとハズレ変動は約7秒、保留3個以上で約2.5秒に短縮。大当りはアタッカーに10個入るごとに1ラウンドが終わる。", seg("settings.speed", SPEED_LABEL, st.speed));
       body += field("自動PUSH", "ONにすると、PUSHや八卦炉レバーの指示をすぐ自動で消化する。OFFでも数秒待てば自動で進む。", seg("settings.autoPush", { off: "OFF", on: "ON" }, st.autoPush));
@@ -997,15 +1043,18 @@
       body = renderArt();
     } else if (tab === "spec") {
       const cont = 1 - Math.pow(1 - S.rushProb, S.stSpins);
-      body = `<div class="table-wrap"><table class="spec"><tbody>
-        <tr><th>タイプ</th><td>1種2種混合機・ライトミドル（LT搭載）</td></tr>
-        <tr><th>大当り確率</th><td>図柄揃い 1/${(1 / S.hitProb).toFixed(1)}・霊力チャージ 1/${(1 / S.chargeProb).toFixed(1)}<br>合算 1/${(1 / (S.hitProb + S.chargeProb)).toFixed(1)}</td></tr>
-        <tr><th>RUSH突入率</th><td>約${Math.round((S.hitRushRate * S.hitProb + S.chargeRushRate * S.chargeProb) / S.hitProb * 100)}%（チャージ昇格を含む）</td></tr>
+      const total = S.hitProb + S.chargeProb;
+      const entry = (S.hitRushRate * S.hitProb + S.chargeRushRate * S.chargeProb) / S.hitProb;
+      body = field("スペック", S.desc + " 画面右上のボタンでも切り替えられる。", seg("settings.spec", Object.fromEntries(Object.entries(D.SPECS).map(([k, v]) => [k, v.label])), state.settings.spec));
+      body += `<div class="table-wrap"><table class="spec"><tbody>
+        <tr><th>タイプ</th><td>${S.key === "ama" ? "甘デジ・ST機（初当り後ST100%）" : `1種2種混合機・${S.key === "middle" ? "ライトミドル" : "甘デジ"}（LT搭載）`}</td></tr>
+        <tr><th>大当り確率</th><td>${S.chargeProb ? `図柄揃い 1/${(1 / S.hitProb).toFixed(1)}・霊力チャージ 1/${(1 / S.chargeProb).toFixed(1)}<br>合算 ` : ""}1/${(1 / total).toFixed(1)}</td></tr>
+        <tr><th>RUSH突入率</th><td>${S.hitRushRate >= 1 ? "100%（初当り後すべて）" : `約${Math.round(entry * 100)}%（チャージ昇格を含む）`}</td></tr>
         <tr><th>弾幕RUSH</th><td>1/${(1 / S.rushProb).toFixed(1)}・ST${S.stSpins}回転<br>継続率 約${Math.round(cont * 100)}%</td></tr>
-        <tr><th>出玉（実獲得）</th><td>異変解決BONUS 10R 約${fmt(S.payout.bonus10R)}発<br>霊力チャージ 2R 約${fmt(S.payout.charge2R)}発<br>RUSH中 ALL約${fmt(S.payout.rush3000)}発（${Math.round(S.rush6000Rate * 100)}%で約${fmt(S.payout.rush6000)}発）</td></tr>
-        <tr><th>賞球・カウント</th><td>1&amp;5&amp;15・10カウント</td></tr>
+        <tr><th>出玉（実獲得）</th><td>異変解決BONUS ${S.rounds.bonus}R 約${fmt(S.payout.bonus10R)}発${S.chargeProb ? `<br>霊力チャージ 2R 約${fmt(S.payout.charge2R)}発` : ""}<br>RUSH中 ${S.rounds.rush}R 約${fmt(S.payout.rush3000)}発（${Math.round(S.rush6000Rate * 100)}%で${S.rounds.rush + S.rounds.big}R 約${fmt(S.payout.rush6000)}発）</td></tr>
+        <tr><th>賞球・カウント</th><td>1&amp;5&amp;${S.attackerPay}・10カウント</td></tr>
         <tr><th>コンプリート</th><td>出玉${fmt(S.complete)}発で遊技終了</td></tr>
-        <tr><th>等価ボーダー</th><td>約17.4回転／1000円</td></tr>
+        <tr><th>等価ボーダー</th><td>約${border().toFixed(1)}回転／1000円</td></tr>
       </tbody></table></div>
       <p class="note">スペックと演出の信頼度は e東京喰種（2025）の解析値に合わせています。演出は当否を先に決めてから選ぶので、表の信頼度はシミュレーションでもそのまま再現されます。</p>`;
       body += relTables("通常時の保留・先読み・先バレ", [D.NORMAL_HOLD, ...D.NORMAL_PREREAD, D.SENBARE.s40, D.SENBARE.s90, D.SENBARE.ex, D.LEVER_BURU.off, D.LEVER_BURU.on, D.IMPACT.off]);
@@ -1070,6 +1119,7 @@
     window.Sound.setEnabled(st.sound === "on");
     window.Sound.setVolume(st.volume);
     window.Sound.setBgm(st.bgm === "on");
+    if (S.key !== st.spec) applyDev();
     window.Sound.setPreset("yakumono", st.presetYakumono);
     window.Sound.setPreset("senbare", st.presetSenbare);
     renderLog();
@@ -1178,6 +1228,11 @@
     $("leftShot").addEventListener("click", () => setShot("left"));
     $("rightShot").addEventListener("click", () => setShot("right"));
     $("rushEndBtn").addEventListener("click", requestEndRush);
+    // スペック切り替え：ミドル → 99ver. → 甘デジ → ミドル …
+    $("specBtn").addEventListener("click", () => {
+      const keys = Object.keys(D.SPECS);
+      setSpec(keys[(keys.indexOf(S.key) + 1) % keys.length]);
+    });
     $("dropBtn").addEventListener("click", () => {
       window.Sound.unlock();
       stage.drop("normal", false, "yakumono");

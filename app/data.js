@@ -8,17 +8,60 @@
 // rushOnly : RUSH直行の当たりでのみ出る演出。
 // ctx      : 信頼度の母数。spin=全変動 / reach=リーチ時 / sp=SPリーチ時 / self=親リーチ内 / bonus=BONUS中のRUSH突入率。
 (function (root) {
+  // 台のスペック。ボタンひとつで切り替えられる（演出の信頼度は確率に合わせて自動で保たれる）
+  // payout は払い出しではなく実獲得（ラウンド中の打ち出し分を引いた値）。物理盤面ではアタッカー入賞で実際に払い出す。
+  const SPECS = {
+    middle: {
+      label: "ライトミドル", short: "ミドル",
+      desc: "e東京喰種と同じ仕様。図柄揃い＋霊力チャージ 合算1/199.9、RUSH 継続率約75%、RUSH中は約3000発。",
+      hitProb: 1 / 399.9,        // 図柄揃い（異変解決BONUS）
+      chargeProb: 1 / 399.9,     // 霊力チャージ（合算 1/199.9）
+      hitRushRate: 0.5,          // 図柄揃い時のRUSH突入（BONUS中のチャレンジ成功）
+      chargeRushRate: 0.01,      // チャージからのRUSH昇格
+      rushProb: 1 / 95.3,
+      stSpins: 130,
+      attackerPay: 15,           // 1カウントあたりの賞球
+      rounds: { bonus: 10, rush: 20, big: 20 },
+      payout: { bonus10R: 1400, charge2R: 280, rush3000: 2800, rush6000: 5600 },
+      rush6000Rate: 0.03,
+      labels: { rush: "3000", big: "6000" },
+    },
+    ama99: {
+      label: "甘デジ 99ver.", short: "99ver.",
+      desc: "この台の甘デジ版。仕組みはそのまま（図柄揃い＋チャージ・RUSH突入チャレンジ）で、合算1/99.9、RUSH 継続率約73%、RUSH中は約1000発。",
+      hitProb: 1 / 149.9,
+      chargeProb: 1 / 299.9,     // 合算 1/99.9
+      hitRushRate: 0.5,
+      chargeRushRate: 0.01,
+      rushProb: 1 / 49.9,
+      stSpins: 64,
+      attackerPay: 10,
+      rounds: { bonus: 10, rush: 10, big: 10 },
+      payout: { bonus10R: 930, charge2R: 185, rush3000: 930, rush6000: 1860 },
+      rush6000Rate: 0.03,
+      labels: { rush: "1000", big: "2000" },
+    },
+    ama: {
+      label: "普通の甘デジ", short: "甘デジ",
+      desc: "昔ながらの甘デジ。1/99.9で、当たればすべてST（1/39.9・40回転、継続率約64%）に突入。ST中の当りは半分が10R（4R＋上乗せ6R）。",
+      hitProb: 1 / 99.9,
+      chargeProb: 0,
+      hitRushRate: 1,            // 初当り後は必ずST
+      chargeRushRate: 0,
+      rushProb: 1 / 39.9,
+      stSpins: 40,
+      attackerPay: 10,
+      rounds: { bonus: 4, rush: 4, big: 6 },
+      payout: { bonus10R: 370, charge2R: 0, rush3000: 370, rush6000: 930 },
+      rush6000Rate: 0.5,
+      labels: { rush: "4R", big: "10R" },
+    },
+  };
+
   const SPEC = {
     name: "e東方幻想弾幕録",
-    hitProb: 1 / 399.9,        // 図柄揃い（異変解決BONUS）
-    chargeProb: 1 / 399.9,     // 霊力チャージ（合算 1/199.9）
-    hitRushRate: 0.5,          // 図柄揃い時のRUSH突入（BONUS中のチャレンジ成功）
-    chargeRushRate: 0.01,      // チャージからのRUSH昇格
-    rushProb: 1 / 95.3,
-    stSpins: 130,
-    // 払い出しではなく実獲得（ラウンド中の打ち出し分を引いた値）
-    payout: { bonus10R: 1400, charge2R: 280, rush3000: 2800, rush6000: 5600 },
-    rush6000Rate: 0.03,
+    key: "middle",
+    ...SPECS.middle,
     firePerMin: 100,
     holdMax: 4,
     rent: { yen: 1000, balls: 250 },
@@ -533,7 +576,7 @@
     NORMAL_HOLD, NORMAL_PREREAD, NORMAL_YOKOKU, NORMAL_PRE_REACH, NORMAL_SP_YOKOKU, NORMAL_REACH, KYOUKI_FAIL,
     NORMAL_REVIVE, RUSH_REVIVE,
     RUSH_HOLD, RUSH_PREREAD, RUSH_YOKOKU, RUSH_SP_YOKOKU, RUSH_REACH, RUSH_MODES, RENDA,
-    CHALLENGES, BONUS_URA, SERIFU,
+    CHALLENGES, BONUS_URA, SERIFU, SPECS,
   };
 
   if (typeof module !== "undefined") module.exports = data;

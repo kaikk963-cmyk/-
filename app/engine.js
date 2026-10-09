@@ -12,7 +12,7 @@
 
     function missWeight(o, p, norm) {
       if (o.missRate != null) return o.missRate;
-      if (o.rel >= 1) return 0;
+      if (o.rel >= 1 || p >= 1) return 0;
       return ((o.share / norm) * p * (1 - o.rel)) / (o.rel * (1 - p));
     }
 
@@ -34,13 +34,63 @@
       };
     }
 
-    const nc = contextProbs(S.hitProb, D.NORMAL_REACH);
-    const rc = contextProbs(S.rushProb, D.RUSH_REACH);
-    const P = {
-      spin: S.hitProb, reach: nc.reach, sp: nc.sp,
-      rushSpin: S.rushProb, rushSp: rc.sp,
-      bonus: S.hitRushRate,
-    };
+    // ---- スペックごとの信頼度 ----
+    // データの rel はライトミドル（SPECS.middle）での値。甘デジなどで大当り確率が変わっても
+    // ハズレ時の演出の出方は変えず、実機の甘デジ版と同じく信頼度のほうが上がるようにする。
+    // 当否のオッズ（p/(1-p)）が何倍になったかを、各演出のオッズに掛ける。
+    const BASE = (D.SPECS && D.SPECS.middle) || { ...S };
+    const baseRel = new Map(); // 演出 → ミドルでの信頼度
+    const family = new Map();  // 演出グループ → normal / rush / bonus
+    function walk(v, fam, seen = new Set()) {
+      if (!v || typeof v !== "object" || seen.has(v)) return;
+      seen.add(v);
+      if (Array.isArray(v)) return v.forEach((x) => walk(x, fam, seen));
+      if (Array.isArray(v.options) && v.ctx) {
+        if (!family.has(v)) family.set(v, fam);
+        for (const o of v.options) {
+          if (!baseRel.has(o)) baseRel.set(o, o.rel);
+          if (o.subs) walk(o.subs, fam, seen);
+        }
+        return;
+      }
+      for (const x of Object.values(v)) walk(x, fam, seen);
+    }
+    for (const [k, v] of Object.entries(D)) {
+      if (k === "SPEC" || k === "SPECS") continue;
+      walk(v, k.startsWith("RUSH_") || k === "RENDA" ? "rush" : k === "BONUS_URA" ? "bonus" : "normal");
+    }
+    const odds = (p) => p / (1 - p);
+    function factor(fam) {
+      if (fam === "rush") return odds(S.rushProb) / odds(BASE.rushProb);
+      if (fam === "bonus") return S.hitRushRate >= 1 ? 1 : odds(S.hitRushRate) / odds(BASE.hitRushRate);
+      return odds(S.hitProb) / odds(BASE.hitProb);
+    }
+    function scaleRel(rel, f) {
+      if (!(rel > 0 && rel < 1) || f === 1) return rel;
+      const od = (rel / (1 - rel)) * f;
+      return od / (1 + od);
+    }
+    // 開発者モード用：表示中の信頼度 ⇔ ミドルでの信頼度
+    const toBase = (group, rel) => scaleRel(rel, 1 / factor(family.get(group) || "normal"));
+    const setBase = (o, rel) => baseRel.set(o, rel);
+    const baseOf = (o) => (baseRel.has(o) ? baseRel.get(o) : o.rel);
+
+    // スペックの切り替えや開発者モードで確率・演出の出方が変わったら recalc() で計算し直す
+    const P = {};
+    function recalc() {
+      for (const [g, fam] of family) {
+        const f = factor(fam);
+        for (const o of g.options) o.rel = scaleRel(baseOf(o), f);
+      }
+      const nc = contextProbs(S.hitProb, D.NORMAL_REACH);
+      const rc = contextProbs(S.rushProb, D.RUSH_REACH);
+      Object.assign(P, {
+        spin: S.hitProb, reach: nc.reach, sp: nc.sp,
+        rushSpin: S.rushProb, rushSp: rc.sp,
+        bonus: S.hitRushRate,
+      });
+    }
+    recalc();
 
     // 当否 out = { hit, rush } に応じて group から1つ選ぶ。何も出ないときは null。
     // rushRate は rushOnly の演出を当たりの中でどれだけ寄せるかの補正（RUSH中は 1）。
@@ -134,7 +184,7 @@
         const s = pickCtx(g, out);
         if (s) {
           hold.senbare = { sound: s.sound, info: { group: `${g.name}（${D.CUSTOMS.senbare.choices[custom.senbare]}）`, label: s.label, rel: s.rel } };
-          hold.ura = result.kind === "hit" && result.rush && rng() < D.URA_BUTTON_RATE;
+          hold.ura = result.kind === "hit" && result.rush && S.hitRushRate < 1 && rng() < D.URA_BUTTON_RATE;
         }
       }
 
@@ -142,7 +192,7 @@
         const g = D.SENBARE[custom.senbare] || D.SENBARE.s40;
         const s = out.hit ? pick(g, out, P.spin, S.hitRushRate) || g.options[0] : g.options[0];
         hold.senbare = { sound: s.sound, info: { group: `${g.name}（強制）`, label: s.label, rel: s.rel } };
-        hold.ura = result.kind === "hit" && result.rush && rng() < D.URA_BUTTON_RATE;
+        hold.ura = result.kind === "hit" && result.rush && S.hitRushRate < 1 && rng() < D.URA_BUTTON_RATE;
       }
 
       if (rush && custom.rushMode === "shurai" && out.hit && rng() < 0.6) hold.notice = true;
@@ -465,10 +515,10 @@
     function bonusSteps(result, digits, mode, custom) {
       const steps = [];
       if (mode === "rush") {
-        steps.push({ t: "bonus", title: "異変解決BONUS", sub: "3000", rounds: 20, payout: S.payout.rush3000 });
+        steps.push({ t: "bonus", title: "異変解決BONUS", sub: S.labels.rush, rounds: S.rounds.rush, payout: S.payout.rush3000 });
         if (result.big) {
-          steps.push({ t: "hand", sound: "low", notice: "夢想封印MAX", info: { group: "BONUS中", label: "夢想封印MAX（6000）", rel: 1 } });
-          steps.push({ t: "bonus", title: "夢想封印MAX", sub: "6000", rounds: 20, payout: S.payout.rush6000 - S.payout.rush3000 });
+          steps.push({ t: "hand", sound: "low", notice: "夢想封印MAX", info: { group: "BONUS中", label: `夢想封印MAX（${S.labels.big}）`, rel: 1 } });
+          steps.push({ t: "bonus", title: "夢想封印MAX", sub: S.labels.big, rounds: S.rounds.big, payout: S.payout.rush6000 - S.payout.rush3000 });
         }
         steps.push({ t: "rushContinue" }, serif(choice(L.rushContinue)));
         return steps;
@@ -478,11 +528,15 @@
         return steps;
       }
 
-      const uo = pick(D.BONUS_URA, { hit: result.rush, rush: result.rush }, P.bonus, 1);
-      const ura = uo ? { color: uo.color, info: info(D.BONUS_URA, uo) } : { color: "white", info: null };
-      steps.push({ t: "bonus", title: "異変解決BONUS", sub: "10R", rounds: 10, payout: S.payout.bonus10R, ura }, serif(choice(L.bonus)));
+      // 初当りがすべてRUSH（ST）直行のスペックでは、裏ボタンも突入チャレンジもない
+      const direct = S.hitRushRate >= 1;
+      const uo = direct ? null : pick(D.BONUS_URA, { hit: result.rush, rush: result.rush }, P.bonus, 1);
+      const ura = direct ? null : uo ? { color: uo.color, info: info(D.BONUS_URA, uo) } : { color: "white", info: null };
+      steps.push({ t: "bonus", title: "異変解決BONUS", sub: `${S.rounds.bonus}R`, rounds: S.rounds.bonus, payout: S.payout.bonus10R, ura }, serif(choice(L.bonus)));
 
-      if (digits[0] === 7) {
+      if (direct) {
+        steps.push({ t: "rushResult", success: true, text: "弾幕RUSH 突入" }, serif(choice(L.rushIn), "gold"));
+      } else if (digits[0] === 7) {
         steps.push({ t: "rushResult", success: true, text: "霊夢図柄 RUSH確定" }, serif(choice(L.rushIn), "gold"));
       } else if ((custom.challenge || "koumakan") === "koumakan") {
         const reimuLine = result.rush && rng() < 0.2;
@@ -501,7 +555,7 @@
       return steps;
     }
 
-    return { P, pick, drawNormal, drawRush, makeHold, normalScenario, rushScenario, bonusSteps };
+    return { P, recalc, toBase, setBase, baseOf, pick, drawNormal, drawRush, makeHold, normalScenario, rushScenario, bonusSteps };
   }
 
   if (typeof module !== "undefined") module.exports = { createEngine };

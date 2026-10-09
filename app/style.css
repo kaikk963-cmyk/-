@@ -823,3 +823,7 @@ button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px s
 .preset .seg { flex-wrap: wrap; }
 .preset .seg button { flex: 1 0 30%; font-size: 12px; padding: 8px 2px; }
 .ok-msg { font-size: 12px; color: var(--gold); margin: 2px 0 6px; }
+.spec-btn { margin-left: auto; height: 42px; min-width: 76px; padding: 0 10px; border-radius: 12px; font-size: 13px; font-weight: 700; color: var(--gold); border: 1px solid var(--gold); background: var(--panel); white-space: nowrap; }
+.spec-btn[data-spec="ama99"] { color: #7fe0ff; border-color: #7fe0ff; }
+.spec-btn[data-spec="ama"] { color: #8dff9e; border-color: #8dff9e; }
+.toast { position: absolute; left: 50%; top: 6%; transform: translateX(-50%); z-index: 6; padding: 8px 14px; border-radius: 999px; background: rgba(10, 8, 22, 0.92); border: 1px solid var(--gold); color: #fff; font-size: 13px; font-weight: 700; white-space: nowrap; pointer-events: none; }
