@@ -8,7 +8,7 @@
   const fmt = (n) => Math.round(n).toLocaleString("ja-JP");
 
   const DEFAULT_CUSTOM = { senbare: "s40", sakiyomi: "osusume", leverBuru: "off", impact: "off", rushMode: "default", challenge: "koumakan" };
-  const DEFAULT_SETTINGS = { boardV: 5, board: "on", shot: "left", autoShot: "on", leftStrength: 45, rightStrength: 90, hesoOpen: 2.25, rate: 18, speed: "real", autoPush: "off", sound: "on", bgm: "off", volume: 0.7, vibe: "on", showRel: "on" };
+  const DEFAULT_SETTINGS = { boardV: 5, board: "on", shot: "left", autoShot: "on", leftStrength: 45, rightStrength: 90, hesoOpen: 2.25, rate: 18, speed: "real", autoPush: "off", sound: "on", bgm: "off", volume: 0.7, vibe: "on", showRel: "on", presetYakumono: "std", presetSenbare: "std" };
   const SPEEDS = { real: 1, slow: 1.35, normal: 1, fast: 0.5, turbo: 0.2 };
   const SPEED_LABEL = { real: "実機", normal: "標準", fast: "高速", turbo: "爆速" };
   const DEFAULT_DEV = { overrides: {}, force: "none", senbare: "off", rush6000: null, dropBtn: "on" };
@@ -713,6 +713,11 @@
     { name: "rushIn", label: "RUSH突入", sub: "弾幕RUSH突入・継続" },
   ];
 
+  // 役物投下・先バレで選べる内蔵の音
+  const SOUND_PRESETS = { std: "標準", pokyun: "ポキュン", kyuin: "キュイン", don: "ドン", kiin: "キーン", piron: "ピロリン" };
+  const PRESET_SETTING = { yakumono: "presetYakumono", senbare: "presetSenbare" };
+  let soundMsg = null; // 取り込みの結果 { key, text, ok }
+
   function loadCustomSounds() {
     for (const sl of SOUND_SLOTS) window.Sound.setCustom(sl.name, window.GensouAssets.blob(`sound:${sl.name}`));
   }
@@ -737,16 +742,20 @@
   function soundRow(sl) {
     const key = `sound:${sl.name}`;
     const has = !!window.GensouAssets.blob(key);
+    const msg = soundMsg && soundMsg.key === key ? `<p class="${soundMsg.ok ? "ok-msg" : "warn"}" role="status">${soundMsg.text}</p>` : "";
+    const ps = PRESET_SETTING[sl.name];
+    const presets = ps ? `<div class="preset"><span>内蔵の音から選ぶ${has ? "（取り込んだ音が優先）" : ""}</span>${seg(`settings.${ps}`, SOUND_PRESETS, state.settings[ps])}</div>` : "";
     return `<div class="asset-row${sl.main ? " main-sound" : ""}"><div class="thumb"><span aria-hidden="true">${has ? "♪" : "—"}</span></div>
-      <div class="name">${sl.label}<small>${has ? `<b class="custom-on">取り込んだ音</b>` : "標準の音"}・${sl.sub}</small></div>
+      <div class="name">${sl.label}<small>${has ? `<b class="custom-on">取り込んだ音</b>` : ps && state.settings[ps] !== "std" ? `<b class="custom-on">内蔵：${SOUND_PRESETS[state.settings[ps]]}</b>` : "標準の音"}・${sl.sub}</small></div>
       <div class="acts"><button type="button" data-preview="${sl.name}" aria-label="${sl.label}を試し聴き">▶</button>
-      <label class="btn">${has ? "変更" : "音を選ぶ"}<input type="file" accept="audio/*,.mp3,.m4a,.wav,.ogg,.aac" data-asset="${key}" aria-label="${sl.label}のファイル"></label>
+      <label class="btn pick">${has ? "変更" : "ファイル"}<input type="file" data-asset="${key}" aria-label="${sl.label}のファイルを選ぶ"></label>
       ${has ? `<button type="button" data-asset-del="${key}" aria-label="${sl.label}を標準に戻す">戻す</button>` : ""}</div></div>
+      ${msg}${presets}
       ${sl.tries ? `<div class="drop-btns try-btns">${sl.tries.map(([k, t]) => `<button type="button" data-try="${k}" data-try-sound="${sl.trySound}">${t}</button>`).join("")}</div>` : ""}`;
   }
 
   function renderSound() {
-    let body = `<p class="note">スマホの中の音声ファイル（mp3・m4a・wav など）を選ぶと、その場面の音が差し替わります。音量はほかの効果音に自動でそろえます。<b>▶</b>で音だけ、下のボタンで実際に液晶に陰陽玉を落として確認できます（抽選には関係しません）。</p>`;
+    let body = `<p class="note">「内蔵の音から選ぶ」でボタンを押すだけで音が変わります。自分の音にしたいときは「ファイル」から、mp3・m4a・wav などの音声か、<b>音の入った動画</b>（写真アプリの動画でもOK）を選んでください。頭の無音は自動で詰め、長いものは8秒で切り、音量はほかの効果音にそろえます。<b>▶</b>で音だけ、下のボタンで実際に液晶に陰陽玉を落として確認できます（抽選には関係しません）。</p>`;
     if (window.GensouCloud.canStoreArt()) body += `<p class="note">取り込んだ音は claude.ai のアカウントにも保存されるので、アプリを閉じても消えません。</p>`;
     else if (!window.GensouAssets.persistent()) body += `<p class="warn">この環境では音を保存できないため、ページを閉じると取り込んだ音は消えます。</p>`;
     body += `<h3 class="art-head">役物投下・先バレ</h3>`;
@@ -759,12 +768,31 @@
 
   async function onArtFile(el) {
     const file = el.files && el.files[0];
+    const key = el.dataset.asset;
     if (!file) return;
-    await window.GensouAssets.put(el.dataset.asset, file);
+    let blob = file;
+    if (key.startsWith("sound:")) {
+      soundMsg = { key, text: "読み込み中…", ok: true };
+      renderMenu();
+      const conv = await window.Sound.convert(file);
+      if (!conv) {
+        soundMsg = { key, text: `「${file.name || "ファイル"}」は音として読めませんでした。mp3・m4a・wav か、音の入った動画を選んでください。`, ok: false };
+        return renderMenu();
+      }
+      blob = conv.blob;
+      soundMsg = { key, text: `取り込みました（${conv.seconds.toFixed(1)}秒）。`, ok: true };
+    }
+    await window.GensouAssets.put(key, blob);
     loadCustomSounds();
     stage.refreshArt();
     renderMenu();
-    window.GensouCloud.putArt(el.dataset.asset, file);
+    if (key.startsWith("sound:")) window.Sound.preview(key.slice(6));
+    const stored = await window.GensouCloud.putArt(key, blob);
+    if (key.startsWith("sound:") && soundMsg && soundMsg.key === key) {
+      if (stored) soundMsg.text += "アカウントにも保存したので、閉じても消えません。";
+      else if (window.GensouCloud.isReady()) { soundMsg.text += "アカウントへの保存に失敗したので、この端末だけで使えます。"; soundMsg.ok = false; }
+      if (!$("menu").hidden && tab === "sound") renderMenu();
+    }
   }
 
   function onDevInput(el) {
@@ -1042,6 +1070,8 @@
     window.Sound.setEnabled(st.sound === "on");
     window.Sound.setVolume(st.volume);
     window.Sound.setBgm(st.bgm === "on");
+    window.Sound.setPreset("yakumono", st.presetYakumono);
+    window.Sound.setPreset("senbare", st.presetSenbare);
     renderLog();
     renderStatus();
     $("shotSeg").hidden = !useBoard();
@@ -1099,6 +1129,10 @@
       if (b) {
         const [scope, key] = b.dataset.set.split(".");
         state[scope][key] = b.dataset.val;
+        if (key.startsWith("preset")) {
+          window.Sound.setPreset(key === "presetYakumono" ? "yakumono" : "senbare", b.dataset.val);
+          window.Sound.previewPreset(b.dataset.val);
+        }
         save();
         applySettings();
         renderMenu();
@@ -1133,6 +1167,7 @@
       }
       const del = e.target.closest("[data-asset-del]");
       if (del) {
+        soundMsg = null;
         await window.GensouAssets.remove(del.dataset.assetDel);
         window.GensouCloud.removeArt(del.dataset.assetDel);
         loadCustomSounds();
@@ -1151,6 +1186,7 @@
       const b = e.target.closest("[data-tab]");
       if (!b) return;
       tab = b.dataset.tab;
+      soundMsg = null;
       renderMenu();
     });
     $("confirmYes").addEventListener("click", requestReset);

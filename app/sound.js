@@ -15,12 +15,32 @@
   // 取り込んだ音（名前ごと）。AudioContext ができてからデコードする
   const custom = {};
 
-  async function decodeCustom(name) {
+  // 最初のタップより前に読み込んでおけるよう、音を鳴らす前は別の（オフラインの）コンテキストで読み込む
+  let decoder = null;
+  function decodeWith() {
+    if (ctx) return ctx;
+    if (!decoder) {
+      const OAC = root.OfflineAudioContext || root.webkitOfflineAudioContext;
+      if (OAC) try { decoder = new OAC(1, 1, 44100); } catch {}
+    }
+    return decoder;
+  }
+
+  function decodeCustom(name) {
     const c = custom[name];
-    if (!c || c.buffer || !ctx) return;
+    const dc = decodeWith();
+    if (!c || c.buffer || !dc) return Promise.resolve();
+    if (!c.decoding) c.decoding = decodeInto(name, c, dc);
+    return c.decoding;
+  }
+
+  async function decodeInto(name, c, dc) {
     try {
       const data = await c.blob.arrayBuffer();
-      const buf = await ctx.decodeAudioData(data);
+      const buf = await new Promise((resolve, reject) => {
+        const p = dc.decodeAudioData(data, resolve, reject);
+        if (p && p.catch) p.catch(reject);
+      });
       // 音量をほかの効果音にそろえる（RMSで正規化）
       let sum = 0, n = 0;
       for (let ch = 0; ch < buf.numberOfChannels; ch++) {
@@ -30,7 +50,7 @@
       const rms = Math.sqrt(sum / Math.max(1, n)) || 0.1;
       if (custom[name] === c) { c.buffer = buf; c.gain = Math.min(1, 0.16 / rms); }
     } catch {
-      delete custom[name];
+      if (custom[name] === c) delete custom[name];
     }
   }
 
@@ -178,21 +198,109 @@
     gap() { tone({ freq: 196, type: "sawtooth", dur: 0.9, vol: 0.08, slide: 98 }); noise({ dur: 0.9, vol: 0.12, type: "bandpass", freq: 300, sweep: 120 }); },
   };
 
-  // 取り込んだ音を探す順番：種類ごとの音 → その場面の共通の音（先バレは落下音にも引き継ぐ）
+  // 役物投下・先バレで選べる内蔵の音（すべてオリジナルの合成音）
+  const PRESETS = {
+    pokyun() {
+      tone({ freq: 520, type: "square", dur: 0.08, vol: 0.14, slide: 1560 });
+      tone({ freq: 1560, type: "sine", dur: 0.6, vol: 0.22, slide: 3120, delay: 0.07 });
+      tone({ freq: 3120, type: "triangle", dur: 0.45, vol: 0.07, slide: 4680, delay: 0.09 });
+    },
+    kyuin() {
+      tone({ freq: 220, type: "sawtooth", dur: 0.7, vol: 0.12, slide: 1760 });
+      tone({ freq: 440, type: "square", dur: 0.7, vol: 0.07, slide: 3520 });
+      tone({ freq: 1760, type: "sine", dur: 0.5, vol: 0.14, delay: 0.62 });
+    },
+    don() {
+      tone({ freq: 120, type: "sine", dur: 1.0, vol: 0.6, slide: 36 });
+      noise({ dur: 0.35, vol: 0.4, type: "lowpass", freq: 260 });
+      tone({ freq: 60, type: "triangle", dur: 0.8, vol: 0.3, slide: 30, delay: 0.05 });
+    },
+    kiin() {
+      [2637, 3951, 5274].forEach((f, i) => tone({ freq: f, type: "sine", dur: 1.5 - i * 0.35, vol: 0.13 / (i + 1), attack: 0.002 }));
+      noise({ dur: 0.05, vol: 0.15, type: "highpass", freq: 6000 });
+    },
+    piron() { notes([1319, 1760, 2637, 3520], { type: "square", vol: 0.1, step: 0.07, len: 0.22 }); },
+  };
+  const presetOf = {};
+
+  // 鳴らす順番：取り込んだ音（種類ごと → その場面）→ 選んだ内蔵の音 → 陰陽玉落下の取り込んだ音 → 標準の音
   function customChain(name, arg) {
     const kind = typeof arg === "string" ? arg : "";
-    if (name === "senbare") return [`senbare:${kind}`, "senbare", `drop:${kind}`, "drop"];
+    if (name === "senbare") return [`senbare:${kind}`, "senbare", "@senbare", `drop:${kind}`, "drop"];
+    if (name === "yakumono") return ["yakumono", "@yakumono", `drop:${kind}`, "drop"];
     if (name === "drop") return [`drop:${kind}`, "drop"];
-    if (name === "yakumono") return ["yakumono", `drop:${kind}`, "drop"];
     return [name];
+  }
+
+  function playKey(key) {
+    if (key[0] !== "@") return playCustom(key);
+    const pr = PRESETS[presetOf[key.slice(1)]];
+    if (!pr) return false;
+    pr();
+    return true;
   }
 
   function play(name, arg) {
     if (!ready() || !sfx[name]) return;
     try {
-      for (const key of customChain(name, arg)) if (playCustom(key)) return;
+      for (const key of customChain(name, arg)) {
+        // 取り込んだ音の読み込みが間に合っていなければ、読み込み終わりを待って鳴らす
+        if (key[0] !== "@" && custom[key] && !custom[key].buffer) {
+          decodeCustom(key).then(() => { try { if (!playCustom(key)) sfx[name](arg); } catch {} });
+          return;
+        }
+        if (playKey(key)) return;
+      }
       sfx[name](arg);
     } catch {}
+  }
+
+  // 取り込んだ音声（動画の音も可）を、頭の無音を詰めた最大8秒のモノラルWAVにする。読めない形式なら null
+  async function convert(file) {
+    const OAC = root.OfflineAudioContext || root.webkitOfflineAudioContext;
+    if (!OAC) return null;
+    const RATE = 22050;
+    let buf;
+    try {
+      const data = await file.arrayBuffer();
+      const oc = new OAC(1, RATE, RATE);
+      buf = await new Promise((resolve, reject) => {
+        const p = oc.decodeAudioData(data, resolve, reject);
+        if (p && p.catch) p.catch(reject);
+      });
+    } catch {
+      return null;
+    }
+    if (!buf || !buf.length) return null;
+    const rate = buf.sampleRate;
+    const mono = new Float32Array(buf.length);
+    for (let ch = 0; ch < buf.numberOfChannels; ch++) {
+      const d = buf.getChannelData(ch);
+      for (let i = 0; i < d.length; i++) mono[i] += d[i] / buf.numberOfChannels;
+    }
+    let peak = 0;
+    for (let i = 0; i < mono.length; i++) peak = Math.max(peak, Math.abs(mono[i]));
+    if (peak < 0.003) return null;
+    let start = 0, end = mono.length;
+    while (start < end && Math.abs(mono[start]) < peak * 0.02) start++;
+    while (end > start && Math.abs(mono[end - 1]) < peak * 0.005) end--;
+    start = Math.max(0, start - Math.round(rate * 0.005));
+    end = Math.min(end, start + rate * 8);
+    const n = end - start;
+    const fade = Math.min(n, Math.round(rate * 0.02));
+    const out = new ArrayBuffer(44 + n * 2);
+    const v = new DataView(out);
+    const str = (o, t) => { for (let i = 0; i < t.length; i++) v.setUint8(o + i, t.charCodeAt(i)); };
+    str(0, "RIFF"); v.setUint32(4, 36 + n * 2, true); str(8, "WAVEfmt ");
+    v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+    v.setUint32(24, rate, true); v.setUint32(28, rate * 2, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true);
+    str(36, "data"); v.setUint32(40, n * 2, true);
+    for (let i = 0; i < n; i++) {
+      let x = mono[start + i] / peak * 0.9;
+      if (i >= n - fade) x *= (n - i) / fade;
+      v.setInt16(44 + i * 2, Math.max(-1, Math.min(1, x)) * 32767, true);
+    }
+    return { blob: new Blob([out], { type: "audio/wav" }), seconds: n / rate };
   }
 
   // ---- BGM（オリジナルの短いループ。都節音階） ----
@@ -256,11 +364,19 @@
       const keys = customChain(name, kind);
       const run = () => {
         try {
-          for (const key of keys) if (playCustom(key)) return;
+          for (const key of keys) if (playKey(key)) return;
           sfx[name](kind);
         } catch {}
       };
       Promise.all(keys.filter((k) => custom[k] && !custom[k].buffer).map(decodeCustom)).then(run);
+    },
+    convert,
+    // 役物投下・先バレの内蔵の音を選ぶ（"std" は標準の音）
+    setPreset(name, key) { presetOf[name] = key; },
+    previewPreset(key) {
+      unlock();
+      if (!ctx) return;
+      try { (PRESETS[key] || sfx.drop)("normal"); } catch {}
     },
     setTheme(name) { if (bgmTheme !== name) { bgmTheme = name; bgmStep = 0; } },
   };

@@ -749,7 +749,9 @@ button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px s
 .asset-row .acts { display: flex; gap: 6px; }
 .asset-row label.btn { border: 1px solid var(--line); background: var(--panel-2); border-radius: 10px; padding: 8px 10px; cursor: pointer; font-size: 13px; }
 .asset-row label.btn:focus-within { outline: 2px solid var(--gold); }
-.asset-row input[type="file"] { position: absolute; width: 1px; height: 1px; opacity: 0; }
+/* 端末によってはラベル経由で開かないので、透明な input をボタンの上に重ねて直接タップさせる */
+.asset-row label.btn { position: relative; overflow: hidden; }
+.asset-row input[type="file"] { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; font-size: 40px; }
 .asset-row button { font-size: 13px; }
 .drop-btns { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
 .drop-btns button { padding: 10px 4px; font-size: 13px; }
@@ -816,3 +818,8 @@ button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px s
 .try-btns { grid-template-columns: repeat(auto-fit, minmax(90px, 1fr)); padding: 6px 0 10px; border-bottom: 1px solid var(--line); }
 .asset-row.main-sound { border-bottom: 0; }
 .asset-row .name .custom-on { color: var(--gold); font-weight: 700; }
+.preset { padding: 2px 0 6px; }
+.preset > span { display: block; font-size: 11px; color: var(--muted); margin-bottom: 4px; }
+.preset .seg { flex-wrap: wrap; }
+.preset .seg button { flex: 1 0 30%; font-size: 12px; padding: 8px 2px; }
+.ok-msg { font-size: 12px; color: var(--gold); margin: 2px 0 6px; }
