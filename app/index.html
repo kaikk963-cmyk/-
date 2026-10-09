@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+  <meta name="theme-color" content="#0b0b0f">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>喰種パチシミュ</title>
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icon-192.png">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="top">
+    <select id="spec" aria-label="機種"></select>
+    <button id="menuBtn" class="ghost" aria-label="メニュー">☰</button>
+  </header>
+
+  <section class="stats">
+    <div><span>持ち玉</span><b id="balls">0</b></div>
+    <div><span>投資</span><b id="invested">0円</b></div>
+    <div><span>収支</span><b id="balance">0円</b></div>
+    <div><span>回転数</span><b id="spinsSinceHit">0</b></div>
+    <div><span>総回転</span><b id="spins">0</b></div>
+    <div><span>初当たり</span><b id="firstHits">0</b></div>
+  </section>
+
+  <main id="stage" class="stage">
+    <div id="modeLabel" class="mode">通常</div>
+    <div class="reels">
+      <div class="reel" id="r0">7</div>
+      <div class="reel" id="r1">3</div>
+      <div class="reel" id="r2">5</div>
+    </div>
+    <div id="message" class="message"></div>
+    <div id="stInfo" class="st"></div>
+  </main>
+
+  <section class="controls">
+    <button id="spinBtn" class="primary">回す</button>
+    <div class="row">
+      <button id="autoBtn">オート OFF</button>
+      <button id="fastBtn">高速 OFF</button>
+    </div>
+  </section>
+
+  <section class="history">
+    <h2>大当たり履歴</h2>
+    <ol id="history"></ol>
+  </section>
+
+  <dialog id="menu">
+    <h2>メニュー</h2>
+    <p id="specDetail" class="detail"></p>
+    <button id="resetBtn" class="danger">データをリセット</button>
+    <button id="closeMenu">閉じる</button>
+  </dialog>
+
+  <script src="specs.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

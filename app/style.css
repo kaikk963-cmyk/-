@@ -1,0 +1,171 @@
+:root {
+  --bg: #0b0b0f;
+  --panel: #16161d;
+  --line: #2a2a35;
+  --text: #ecebf2;
+  --muted: #8d8b99;
+  --red: #d0122f;
+  --red-glow: #ff2d4d;
+  --gold: #f5c542;
+}
+
+* { box-sizing: border-box; }
+
+html, body { margin: 0; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, "Hiragino Sans", "Noto Sans JP", sans-serif;
+  padding: env(safe-area-inset-top) 16px calc(env(safe-area-inset-bottom) + 16px);
+  max-width: 520px;
+  margin: 0 auto;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+}
+
+button, select {
+  font: inherit;
+  color: var(--text);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+
+button:active { transform: scale(0.97); }
+
+.top {
+  display: flex;
+  gap: 8px;
+  padding: 12px 0;
+}
+.top select { flex: 1; }
+.ghost { background: transparent; }
+
+.stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+}
+.stats div {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 6px 8px;
+}
+.stats span { display: block; font-size: 11px; color: var(--muted); }
+.stats b { font-size: 16px; font-variant-numeric: tabular-nums; }
+.plus { color: #4fd18b; }
+.minus { color: var(--red-glow); }
+
+/* 自分の画像を app/assets/bg.jpg に置くと背景になる */
+.stage {
+  position: relative;
+  margin: 12px 0;
+  border-radius: 16px;
+  border: 1px solid var(--line);
+  padding: 20px 12px 16px;
+  text-align: center;
+  background:
+    url("assets/bg.jpg") center / cover,
+    radial-gradient(circle at 50% 120%, #3a0710 0%, #120408 55%, #07070a 100%);
+  overflow: hidden;
+  transition: box-shadow 0.3s;
+}
+.stage.rush {
+  box-shadow: 0 0 24px var(--red-glow), inset 0 0 40px rgba(255, 45, 77, 0.35);
+  border-color: var(--red-glow);
+}
+
+.mode {
+  display: inline-block;
+  font-size: 13px;
+  letter-spacing: 0.1em;
+  padding: 3px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: rgba(0, 0, 0, 0.5);
+}
+.stage.rush .mode { background: var(--red); border-color: var(--red-glow); font-weight: bold; }
+
+.reels {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  margin: 18px 0 10px;
+}
+.reel {
+  width: 78px;
+  height: 104px;
+  display: grid;
+  place-items: center;
+  font-size: 64px;
+  font-weight: 900;
+  background: rgba(0, 0, 0, 0.6);
+  border: 2px solid #3b3b48;
+  border-radius: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.reel.spinning { color: var(--muted); filter: blur(1px); }
+.reel.reach { border-color: var(--red-glow); color: var(--red-glow); box-shadow: 0 0 14px var(--red-glow); }
+.reel.hit { color: var(--gold); border-color: var(--gold); box-shadow: 0 0 18px var(--gold); }
+
+.message {
+  min-height: 32px;
+  font-size: 22px;
+  font-weight: 900;
+  color: var(--red-glow);
+  text-shadow: 0 0 10px rgba(255, 45, 77, 0.7);
+}
+.message.gold { color: var(--gold); text-shadow: 0 0 12px rgba(245, 197, 66, 0.8); }
+.st { min-height: 20px; font-size: 14px; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+.stage.flash { animation: flash 0.6s ease-out 2; }
+@keyframes flash {
+  0% { background-color: #fff; }
+  100% { background-color: transparent; }
+}
+
+.controls { display: grid; gap: 8px; }
+.controls .row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.primary {
+  padding: 18px;
+  font-size: 20px;
+  font-weight: bold;
+  background: var(--red);
+  border-color: var(--red-glow);
+}
+.primary:disabled { opacity: 0.5; }
+.on { background: #3a1018; border-color: var(--red-glow); }
+
+.history h2 { font-size: 14px; color: var(--muted); margin: 18px 0 6px; }
+.history ol {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 240px;
+  overflow-y: auto;
+}
+.history li {
+  display: flex;
+  justify-content: space-between;
+  padding: 8px 4px;
+  border-bottom: 1px solid var(--line);
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+}
+.history .tag { color: var(--red-glow); font-weight: bold; }
+
+dialog {
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  width: min(420px, calc(100% - 32px));
+}
+dialog::backdrop { background: rgba(0, 0, 0, 0.6); }
+dialog h2 { margin-top: 0; font-size: 18px; }
+dialog button { width: 100%; margin-top: 8px; }
+.detail { font-size: 14px; line-height: 1.7; color: var(--muted); white-space: pre-line; }
+.danger { border-color: var(--red); color: var(--red-glow); }
