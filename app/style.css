@@ -586,7 +586,7 @@ button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px s
   justify-items: center;
   gap: 6px;
   text-align: center;
-  background: radial-gradient(circle at 50% 42%, rgba(255, 243, 196, 0.25), rgba(20, 8, 10, 0.75) 70%);
+  background: radial-gradient(circle at 50% 42%, rgba(70, 40, 10, 0.92), rgba(20, 8, 10, 0.95) 70%);
 }
 .bonus-screen .t { font-family: var(--font-display); font-size: clamp(20px, 11cqw, 38px); color: var(--c-gold); text-shadow: 0 0 18px var(--c-gold); }
 .bonus-screen .sub { font-family: var(--font-num); font-size: 18px; letter-spacing: 0.1em; }
@@ -812,3 +812,4 @@ button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px s
 .asset-row .thumb span { font-size: 22px; color: var(--gold); }
 .ctl.rush-end { background: linear-gradient(var(--panel-2), var(--panel)); border-color: #ff9a1f; color: #ffb36b; }
 .btn-danger:disabled { opacity: 0.5; cursor: not-allowed; }
+.bonus-screen .count { font-family: var(--font-num); font-size: 13px; color: var(--c-gold); min-height: 1em; font-variant-numeric: tabular-nums; }

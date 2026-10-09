@@ -8,9 +8,9 @@
   const fmt = (n) => Math.round(n).toLocaleString("ja-JP");
 
   const DEFAULT_CUSTOM = { senbare: "s40", sakiyomi: "osusume", leverBuru: "off", impact: "off", rushMode: "default", challenge: "koumakan" };
-  const DEFAULT_SETTINGS = { boardV: 5, board: "on", shot: "left", autoShot: "on", leftStrength: 45, rightStrength: 90, hesoOpen: 2.25, rate: 18, speed: "normal", autoPush: "off", sound: "on", bgm: "off", volume: 0.7, vibe: "on", showRel: "on" };
-  const SPEEDS = { slow: 1.35, normal: 1, fast: 0.5, turbo: 0.2 };
-  const SPEED_LABEL = { slow: "ゆっくり", normal: "標準", fast: "高速", turbo: "爆速" };
+  const DEFAULT_SETTINGS = { boardV: 5, board: "on", shot: "left", autoShot: "on", leftStrength: 45, rightStrength: 90, hesoOpen: 2.25, rate: 18, speed: "real", autoPush: "off", sound: "on", bgm: "off", volume: 0.7, vibe: "on", showRel: "on" };
+  const SPEEDS = { real: 1, slow: 1.35, normal: 1, fast: 0.5, turbo: 0.2 };
+  const SPEED_LABEL = { real: "実機", normal: "標準", fast: "高速", turbo: "爆速" };
   const DEFAULT_DEV = { overrides: {}, force: "none", senbare: "off", rush6000: null, dropBtn: "on" };
 
   function fresh(custom, settings, dev) {
@@ -182,16 +182,14 @@
       hesoOpen: state.settings.hesoOpen,
       handlers: {
         onFire() {
-          if (inBonus) return true; // BONUS中の打ち出しは払い出しに含めて計算済み
           if (state.balls <= 0) rent();
           state.balls--;
           state.fired++;
-          if (state.mode === "normal") state.usedBalls++;
+          if (state.mode === "normal" && !inBonus) state.usedBalls++;
           scheduleRender();
           return true;
         },
         onHeso() {
-          if (inBonus) return;
           state.balls += 1;
           state.returns += 1;
           addHold();
@@ -204,8 +202,10 @@
           if (state.mode === "rush") addRushHold();
           scheduleRender();
         },
+        onAttacker() {
+          if (roundHook) roundHook();
+        },
         onPocket(n) {
-          if (inBonus) return;
           state.balls += n;
           state.returns += n;
           scheduleRender();
@@ -232,6 +232,37 @@
       }
     };
     requestAnimationFrame(frame);
+  }
+
+  // 大当り1ラウンド：アタッカーを開き、10カウント（とその直後のオーバー入賞）か開放時間切れで閉じる。
+  // 1カウントにつき15発の払い出し。盤面を使わないときは null を返して決まった出玉にする
+  let roundHook = null;
+  function bonusRound(onCount) {
+    if (!useBoard()) return Promise.resolve(null);
+    return new Promise((resolve) => {
+      let count = 0;
+      let paid = 0;
+      let done = false;
+      let closing = null;
+      const finish = () => {
+        if (done) return;
+        done = true;
+        board.attackerOpen = false;
+        roundHook = null;
+        clearTimeout(limit);
+        clearTimeout(closing);
+        resolve(paid);
+      };
+      roundHook = () => {
+        count++;
+        paid += 15;
+        onPayout(15);
+        onCount(count, paid);
+        if (count >= 10 && !closing) closing = setTimeout(finish, 250 * speedFactor());
+      };
+      board.attackerOpen = true;
+      const limit = setTimeout(finish, 30000 * speedFactor());
+    });
   }
 
   let lastHint = "";
@@ -309,7 +340,7 @@
     renderHolds();
     renderCounters();
     const sc = engine.normalScenario(hold, state.custom);
-    await stage.play(sc.steps, { short: state.holds.length >= 3 });
+    await stage.play(sc.steps, { short: state.holds.length >= 3, real: state.settings.speed === "real", holds: state.holds.length });
     current = null;
     if (hold.result.kind === "hit") await bonusNormal(hold, sc.digits);
     else if (hold.result.kind === "charge") await chargeHit(hold);
@@ -325,7 +356,7 @@
     renderHolds();
     renderStatus();
     const sc = engine.rushScenario(hold, state.custom);
-    await stage.play(sc.steps, { short: true });
+    await stage.play(sc.steps, { short: true, real: state.settings.speed === "real", rush: true });
     current = null;
     if (hold.result.kind === "hit") {
       const used = S.stSpins - state.stLeft;
@@ -664,11 +695,18 @@
     return slots;
   }
 
+  // 取り込める効果音。種類ごとの音がないときは共通の音、それもなければ標準の音が鳴る
   const SOUND_SLOTS = [
-    { name: "senbare", label: "先バレ（陰陽玉落下）の音", sub: "保留入賞時に陰陽玉が落ちたとき" },
-    { name: "drop", label: "陰陽玉落下の音", sub: "変動中・リーチ中・復活で落ちたとき" },
-    { name: "kyuin", label: "大当りの音", sub: "図柄がそろったとき" },
-    { name: "rushIn", label: "RUSH突入の音", sub: "弾幕RUSH突入・継続" },
+    { name: "drop", label: "陰陽玉落下（共通）", sub: "種類ごとの音がないときに使う" },
+    { name: "drop:normal", label: "陰陽玉落下（通常音）", sub: "変動中・リーチ中・役物投下ボタン" },
+    { name: "drop:low", label: "陰陽玉落下（低音・濃厚）", sub: "低音の落下" },
+    { name: "drop:high", label: "陰陽玉落下（高音・濃厚）", sub: "高音の落下・デバイス時の落下" },
+    { name: "weakDrop", label: "陰陽玉の弱落下", sub: "西行妖の開花予告など" },
+    { name: "senbare", label: "先バレ（共通）", sub: "保留入賞時の落下。ないときは陰陽玉落下の音" },
+    { name: "senbare:low", label: "先バレ（低音・濃厚）", sub: "先バレの低音" },
+    { name: "senbare:high", label: "先バレ（高音・濃厚）", sub: "先バレの高音" },
+    { name: "kyuin", label: "大当り", sub: "図柄がそろったとき" },
+    { name: "rushIn", label: "RUSH突入", sub: "弾幕RUSH突入・継続" },
   ];
 
   function loadCustomSounds() {
@@ -898,7 +936,7 @@
       body = field("玉の物理演算（盤面）", "ONにすると、盤面に玉を打って、ヘソに入った玉だけが回転になる。ハンドルの強さで回り方が変わる。OFFにすると下の回転率どおりに回る。", seg("settings.board", { on: "ON", off: "OFF" }, st.board));
       body += field("回転率（1000円あたり）", "ヘソへの入賞しやすさ。等価交換のボーダーは約17.4回転。保留が満タンのときの入賞は無駄になるので、実測はこれより少し下がる。",
         `<input id="rateRange" class="range" type="range" min="12" max="26" step="0.5" value="${st.rate}">`, `<b id="rateVal">${st.rate}回転</b>`).replace("ヘソへの入賞しやすさ。", "物理盤面がOFFのときのヘソへの入賞しやすさ。");
-      body += field("演出スピード", "", seg("settings.speed", SPEED_LABEL, st.speed));
+      body += field("演出スピード", "「実機」は実際の台に近い時間で動く。保留が少ないとハズレ変動は約7秒、保留3個以上で約2.5秒に短縮。大当りはアタッカーに10個入るごとに1ラウンドが終わる。", seg("settings.speed", SPEED_LABEL, st.speed));
       body += field("自動PUSH", "ONにすると、PUSHや八卦炉レバーの指示をすぐ自動で消化する。OFFでも数秒待てば自動で進む。", seg("settings.autoPush", { off: "OFF", on: "ON" }, st.autoPush));
       body += field("サウンド", "", seg("settings.sound", { on: "ON", off: "OFF" }, st.sound));
       body += field("BGM", "オリジナルの短いループ曲", seg("settings.bgm", { on: "ON", off: "OFF" }, st.bgm));
@@ -1061,7 +1099,7 @@
         closeMenu();
       }
       const pv = e.target.closest("[data-preview]");
-      if (pv) window.Sound.preview(pv.dataset.preview, "normal");
+      if (pv) window.Sound.preview(pv.dataset.preview);
       const drop = e.target.closest("[data-drop]");
       if (drop) {
         window.Sound.unlock();
@@ -1117,6 +1155,7 @@
       onTime,
       onLog,
       onPayout,
+      bonusRound,
       onVibrate: vibrate,
       onPrompt(kind) {
         $("pushBtn").classList.toggle("armed", kind === "button" || kind === "renda");

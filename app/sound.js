@@ -176,10 +176,18 @@
     gap() { tone({ freq: 196, type: "sawtooth", dur: 0.9, vol: 0.08, slide: 98 }); noise({ dur: 0.9, vol: 0.12, type: "bandpass", freq: 300, sweep: 120 }); },
   };
 
+  // 取り込んだ音を探す順番：種類ごとの音 → その場面の共通の音（先バレは落下音にも引き継ぐ）
+  function customChain(name, arg) {
+    const kind = typeof arg === "string" ? arg : "";
+    if (name === "senbare") return [`senbare:${kind}`, "senbare", `drop:${kind}`, "drop"];
+    if (name === "drop") return [`drop:${kind}`, "drop"];
+    return [name];
+  }
+
   function play(name, arg) {
     if (!ready() || !sfx[name]) return;
     try {
-      if (playCustom(name)) return;
+      for (const key of customChain(name, arg)) if (playCustom(key)) return;
       sfx[name](arg);
     } catch {}
   }
@@ -237,12 +245,19 @@
       else delete custom[name];
     },
     // 試し聴き（設定がOFFでも鳴らす）
-    preview(name, arg) {
+    // 試し聴き。slot は "drop:low" のような 名前:種類
+    preview(slot) {
       unlock();
       if (!ctx) return;
-      const run = () => { try { if (!playCustom(name)) sfx[name](arg); } catch {} };
-      if (custom[name] && !custom[name].buffer) decodeCustom(name).then(run);
-      else run();
+      const [name, kind = "normal"] = slot.split(":");
+      const keys = customChain(name, kind);
+      const run = () => {
+        try {
+          for (const key of keys) if (playCustom(key)) return;
+          sfx[name](kind);
+        } catch {}
+      };
+      Promise.all(keys.filter((k) => custom[k] && !custom[k].buffer).map(decodeCustom)).then(run);
     },
     setTheme(name) { if (bgmTheme !== name) { bgmTheme = name; bgmStep = 0; } },
   };

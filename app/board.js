@@ -296,7 +296,7 @@
           this.handlers.onDenchu && this.handlers.onDenchu();
           continue;
         }
-        if (this.mode === "bonus" && b.x > ATTACKER.x0 && b.x < ATTACKER.x1 && b.y > ATTACKER.y - 3 && b.y < ATTACKER.y + 4) {
+        if (this.attackerOpen && b.x > ATTACKER.x0 && b.x < ATTACKER.x1 && b.y > ATTACKER.y - 3 && b.y < ATTACKER.y + 4) {
           this.stats.attacker++;
           this.handlers.onAttacker && this.handlers.onAttacker();
           continue;
@@ -384,7 +384,7 @@
       g.fillStyle = "#fff";
       g.fillText("電チュー", DENCHU.x, DENCHU.y + 15);
       // アタッカー
-      g.fillStyle = board.mode === "bonus" ? "#ffd257" : "#4a3a5a";
+      g.fillStyle = board.attackerOpen ? "#ffd257" : "#4a3a5a";
       g.fillRect(ATTACKER.x0, ATTACKER.y + 3, ATTACKER.x1 - ATTACKER.x0, 5);
       g.fillStyle = "#fff";
       g.fillText("アタッカー", (ATTACKER.x0 + ATTACKER.x1) / 2, ATTACKER.y + 16);

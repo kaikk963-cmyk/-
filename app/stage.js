@@ -746,7 +746,10 @@
           reels.spinAll();
           sfx("start");
         }
-        const base = st.quick ? 350 : opts.short ? 520 : 900;
+        // 「実機」スピードでは、保留が少ないほど長く、3個以上で短縮変動になる
+        const base = opts.real
+          ? opts.rush || st.quick ? 1100 : opts.holds >= 3 ? 2400 : opts.holds === 2 ? 4500 : 7000
+          : st.quick ? 350 : opts.short ? 520 : 900;
         await wait(base);
         reels.stop(0, st.digits[0]);
         sfx("stop");
@@ -961,7 +964,7 @@
         fx.setMode("bonus");
         const scr = add(h("div", "bonus-screen", `
           <div class="t">${st.title}</div><div class="sub">${st.sub}</div>
-          <div class="round">ROUND 0 / ${st.rounds}</div><div class="pay">0</div>
+          <div class="round">ROUND 0 / ${st.rounds}</div><div class="count"></div><div class="pay">0</div>
           ${st.ura ? `<div class="ura" hidden></div><div class="hint">PUSHで裏ボタン</div>` : ""}`));
         sfx("fanfare");
         rightShoot.hidden = false;
@@ -977,18 +980,8 @@
             if (st.ura.info) handlers.onLog && handlers.onLog(st.ura.info);
           };
         }
-        const per = Math.floor(st.payout / st.rounds);
-        let paid = 0;
         await wait(700);
-        for (let r = 1; r <= st.rounds; r++) {
-          const amt = r === st.rounds ? st.payout - paid : per;
-          paid += amt;
-          handlers.onPayout && handlers.onPayout(amt);
-          scr.querySelector(".round").textContent = `ROUND ${r} / ${st.rounds}`;
-          scr.querySelector(".pay").textContent = paid.toLocaleString("ja-JP");
-          sfx("round");
-          await wait(170);
-        }
+        await runRounds(scr, st.rounds, st.payout);
         await wait(700);
         if (!uraShown) uraWindow = null;
         scr.remove();
@@ -1068,11 +1061,11 @@
       async charge(st) {
         setBg("bonus");
         fx.setMode("bonus");
-        const scr = add(h("div", "bonus-screen", `<div class="t">霊力チャージ</div><div class="sub">2R</div><div class="pay">0</div>`));
+        const scr = add(h("div", "bonus-screen", `<div class="t">霊力チャージ</div><div class="sub">2R</div><div class="round"></div><div class="count"></div><div class="pay">0</div>`));
         sfx("card", "gold");
+        rightShoot.hidden = false;
         await wait(600);
-        handlers.onPayout && handlers.onPayout(st.payout);
-        scr.querySelector(".pay").textContent = st.payout.toLocaleString("ja-JP");
+        await runRounds(scr, 2, st.payout);
         await wait(900);
         scr.remove();
         if (st.promote) {
@@ -1145,6 +1138,38 @@
         n.remove();
       },
     };
+
+    // 大当りラウンドの消化。盤面があるときはアタッカーに実際に入った玉を数え（10カウントか開放時間切れで閉じる）、
+    // ないときは決まった出玉を等分して払い出す
+    async function runRounds(scr, rounds, payout) {
+      const per = Math.floor(payout / rounds);
+      let paid = 0;
+      for (let r = 1; r <= rounds; r++) {
+        scr.querySelector(".round").textContent = `ROUND ${r} / ${rounds}`;
+        const countEl = scr.querySelector(".count");
+        const base = paid;
+        const got = handlers.bonusRound
+          ? await handlers.bonusRound((count, roundPaid) => {
+              countEl.textContent = `${count} / 10 カウント`;
+              scr.querySelector(".pay").textContent = (base + roundPaid).toLocaleString("ja-JP");
+              sfx("payout");
+            })
+          : null;
+        if (got == null) {
+          const amt = r === rounds ? payout - paid : per;
+          paid += amt;
+          handlers.onPayout && handlers.onPayout(amt);
+          await wait(170);
+        } else {
+          paid += got;
+          await wait(1200); // ラウンド間のインターバル
+        }
+        scr.querySelector(".pay").textContent = paid.toLocaleString("ja-JP");
+        countEl.textContent = "";
+        sfx("round");
+      }
+      return paid;
+    }
 
     async function play(steps, opts = {}) {
       for (const st of steps) {
