@@ -7,8 +7,8 @@
   const $ = (id) => document.getElementById(id);
   const fmt = (n) => Math.round(n).toLocaleString("ja-JP");
 
-  const DEFAULT_CUSTOM = { senbare: "s40", sakiyomi: "osusume", leverBuru: "off", impact: "off", rushMode: "default", challenge: "koumakan" };
-  const DEFAULT_SETTINGS = { boardV: 5, board: "on", shot: "left", autoShot: "on", leftStrength: 45, rightStrength: 90, hesoOpen: 2.25, rate: 18, speed: "real", autoPush: "off", sound: "on", bgm: "off", volume: 0.7, vibe: "on", showRel: "on", presetYakumono: "std", presetSenbare: "std", spec: "middle" };
+  const DEFAULT_CUSTOM = { senbare: "s40", sakiyomi: "osusume", leverBuru: "off", impact: "off", rushMode: "default", challenge: "koumakan", chargeMode: "toppa" };
+  const DEFAULT_SETTINGS = { boardV: 6, board: "on", shot: "left", autoShot: "on", leftStrength: 45, rightStrength: 90, hesoOpen: 2.25, rate: 18, speed: "real", autoPush: "off", sound: "on", bgm: "off", volume: 0.7, vibe: "on", showRel: "on", presetYakumono: "std", presetSenbare: "std", spec: "middle" };
   const SPEEDS = { real: 1, slow: 1.35, normal: 1, fast: 0.5, turbo: 0.2 };
   const SPEED_LABEL = { real: "実機", normal: "標準", fast: "高速", turbo: "爆速" };
   const DEFAULT_DEV = { overrides: {}, force: "none", senbare: "off", rush6000: null, dropBtn: "on" };
@@ -281,6 +281,10 @@
       lastHint = text;
       $("shotHint").textContent = text;
       $("shotHint").hidden = !text;
+      // BONUS・チャージ中に左打ちのままだとアタッカーに入らないので、目立たせて振動でも知らせる
+      const urgent = needRight && !right && inBonus;
+      $("shotHint").classList.toggle("urgent", urgent);
+      if (urgent) vibrate([120, 60, 120]);
     }
   }
 
@@ -597,6 +601,8 @@
     } else {
       stage.setStatus(`<span class="chip">通常</span><span class="chip st">${state.sinceBonus}</span>`);
     }
+    // ミドル以外のときは、いまのスペックを液晶に出す
+    if (S.key !== "middle") stage.setStatus(`<span class="chip spec">${S.short}</span>${document.querySelector(".status").innerHTML}`);
     if (devActive()) stage.setStatus(`<span class="chip dev">DEV</span>${document.querySelector(".status").innerHTML}`);
   }
 
@@ -664,10 +670,24 @@
     return (S.rent.balls / e) * 1.045;
   }
 
+  // スペックを切り替えたら、まだ回っていない保留も新しい確率で引き直す（先バレ・役物投下した保留はそのまま）
+  function redrawHolds() {
+    const fresh = (h, mode) => {
+      if (h.senbare || h.forcedDrop) return h;
+      const n = engine.makeHold(mode, state.custom);
+      n.shown = null;
+      return n;
+    };
+    state.holds = state.holds.map((h) => fresh(h, "normal"));
+    state.rushHolds = state.rushHolds.map((h) => fresh(h, "rush"));
+    renderHolds();
+  }
+
   function setSpec(key) {
     if (!D.SPECS[key] || key === state.settings.spec) return;
     state.settings.spec = key;
     applyDev();
+    redrawHolds();
     save();
     render();
     showToast(`${D.SPECS[key].label}に切り替えました`);
@@ -1161,7 +1181,7 @@
     window.Sound.setEnabled(st.sound === "on");
     window.Sound.setVolume(st.volume);
     window.Sound.setBgm(st.bgm === "on");
-    if (S.key !== st.spec) applyDev();
+    if (S.key !== st.spec) { applyDev(); redrawHolds(); showToast(`${D.SPECS[st.spec].label}に切り替えました`); }
     window.Sound.setPreset("yakumono", st.presetYakumono);
     window.Sound.setPreset("senbare", st.presetSenbare);
     renderLog();

@@ -1230,21 +1230,63 @@
         }
         layer.innerHTML = "";
       },
+      // 霊力チャージ（2R）。ラウンド中の昇格演出のあと、最後に陰陽玉が落ちれば昇格して弾幕RUSHへ
       async charge(st) {
         setBg("bonus");
         fx.setMode("bonus");
-        const scr = add(h("div", "bonus-screen", `<div class="t">霊力チャージ</div><div class="sub">2R</div><div class="round"></div><div class="count"></div><div class="pay">0</div>`));
+        const label = st.mode === "ippatsu" ? "一発告知" : "門番突破チャレンジ";
+        const scr = add(h("div", "bonus-screen", `<div class="t">霊力チャージ</div><div class="sub">2R・${label}</div><div class="round"></div><div class="count"></div><div class="pay">0</div>`));
         sfx("card", "gold");
         rightShoot.hidden = false;
         await wait(600);
+        if (st.mode === "toppa" && st.lines) await RUN.serif({ char: st.lines.start[0], text: st.lines.start[1], color: "red" });
         await runRounds(scr, 2, st.payout);
-        await wait(900);
+        await wait(500);
         scr.remove();
-        if (st.promote) {
+        let promoted = false;
+        if (st.mode === "toppa") {
+          // 連打で門のゲージを削る。突破できるかは当否で決まっていて、連打は演出
+          const n = add(h("div", "toppa tone-red", `${crest("meiling")}<div class="t">門番突破チャレンジ</div><div class="gate"><i></i></div><div class="m">連打で門を突破しろ！</div>`));
+          const bar = n.querySelector("i");
+          const target = st.toppaWin ? 100 : 55 + rand(40);
+          let v = 0;
+          const timer = setInterval(() => { v = Math.min(target, v + 3 + rand(5)); bar.style.width = `${100 - v}%`; }, 90 * speed);
+          await waitInput("renda", { count: 12, autoMs: 2600 });
+          await new Promise((r) => { const w = setInterval(() => { if (v >= target) { clearInterval(w); r(); } }, 40); });
+          clearInterval(timer);
+          bar.style.width = `${100 - target}%`;
+          const m = n.querySelector(".m");
+          if (st.toppaWin) {
+            flash("gold"); quake();
+            m.textContent = "突破！";
+            n.className = "toppa tone-gold";
+            sfx("card", "gold");
+            promoted = true;
+          } else {
+            m.textContent = "突破ならず…";
+            sfx("fail");
+          }
+          await wait(1000);
+          n.remove();
+          if (st.lines) await RUN.serif({ char: st.lines.end[0], text: st.lines.end[1], color: st.toppaWin ? "gold" : "white" });
+        }
+        // ラウンド終了時：陰陽玉が落ちれば昇格（突破失敗からの逆転もここ）
+        if (st.promote && !promoted) {
+          await wait(700);
+          dropYinyang("high");
+          flash("gold");
+          await wait(1100);
+          promoted = true;
+        }
+        if (promoted) {
           flash();
           const n = add(h("div", "notice tone-rainbow", `<div class="rainbow-text">昇格<br>弾幕RUSHへ</div>`));
           sfx("rushIn");
           await wait(2200);
+          n.remove();
+        } else {
+          const n = add(h("div", "card tone-white", `<div class="t">霊力チャージ</div><div class="m">チャージ完了</div>`));
+          await wait(1100);
           n.remove();
         }
       },

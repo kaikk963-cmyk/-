@@ -15,27 +15,36 @@
 
   // 液晶（ここに演出画面をはめ込む）
   const LCD = { x0: 42, x1: 258, y0: 92, y1: 318 };
-  // 入賞口
+  // ---- 盤面レイアウト（ビスティの実機の釘配置を参考にした構成） ----
+  // 左：左壁ぞいの寄り釘2列 → 液晶左下の風車 → 斜めに長く続く道釘 → ジャンプ釘 → ヘソ（命釘2本）
+  // 左下：道釘の下に一般入賞口が3つ。中央：液晶下のステージからヘソの真上へ
+  // 右：右打ちの玉は液晶の右の細い通路を落ち、途中のアタッカー → 通路の下で左へ曲がって電チューへ
   const HESO = { x: 150, y: 418, w: 4.2 };
-  const DENCHU = { x: 252, y: 386, w: 10 }; // w は羽根が開いたときの受け口の半幅
-  const ATTACKER = { x0: 214, x1: 252, y: 426 };
-  const POCKETS = [{ x: 22, y: 442, w: 5, pay: 5 }, { x: 196, y: 438, w: 4, pay: 5 }];
-  // 道釘（玉が転がる道）。途中のすき間から落ちた玉はアウト
+  const DENCHU = { x: 220, y: 398, w: 10 }; // w は羽根が開いたときの受け口の半幅
+  // アタッカー：右通路の途中。開いていれば通路を落ちてくる玉を受け止める。閉じていればフタの上を転がって下へ
+  const ATTACKER = { x0: 261, x1: 293, y: 236 };
+  const ATTACKER_LID = [294, 229, 272, 238]; // 液晶側に玉1個ぶんのすき間をあけて、閉じているときは横から下へ流す
+  const POCKETS = [{ x: 54, y: 418, w: 5, pay: 5 }, { x: 80, y: 428, w: 5, pay: 5 }, { x: 114, y: 438, w: 5, pay: 5 }, { x: 236, y: 438, w: 4, pay: 1 }];
+  // 道釘（玉が転がる道）。途中のすき間（落とし）から落ちた玉は一般入賞口かアウトへ
   const RAMPS = [
-    // 液晶の屋根（落ちてきた玉を左右に振り分ける）
-    // 頂点を右寄りにして、左打ちで上まで届いた玉は左ルートへ転がるようにする
+    // 液晶の屋根（頂点を右寄りにして、左打ちで上まで届いた玉は左ルートへ転がるようにする）
     [40, 94, 176, 80], [176, 80, 260, 94],
-    // 左ルートの下からヘソへ寄せる道
-    [10, 354, 60, 364], [69, 365.5, 104, 372], [112, 373.5, 136, 378],
-    // 右打ちルート：電チューへ寄せる道と、アタッカーへ流す道
-    [296, 360, 264, 377], [294, 404, 250, 414],
+    // 風車の下からヘソへ向かう長い道釘（2か所の落としあり）
+    [12, 330, 47, 346], [57, 351, 89, 366], [100, 371, 124, 383],
+  ];
+  // 右打ちの通路の壁（実線のレール）
+  const WALLS = [
+    // 通路の下で左へ曲げて電チューへ寄せる
+    [296, 330, 262, 350], [262, 350, 236, 384],
+    // 電チューの右の返し
+    [244, 404, 268, 420],
   ];
   const RAIL_FRICTION = 0.55;
   // 内レール：打ち出しレーン（盤面の左端）と盤面を仕切る。上から落ちてきた玉はここより右を通る
-  const INNER_RAIL = { x: 10, y0: 128, y1: 352 };
+  const INNER_RAIL = { x: 10, y0: 128, y1: 322 };
   // ワープ入口（液晶の左の縁）に入った玉は、液晶下のステージに出てくる
-  const WARP = { x0: 33, x1: 41, y0: 196, y1: 206, outX: 50 };
-  const WARP_RATE = 0.12;
+  const WARP = { x0: 33, x1: 41, y0: 214, y1: 224, outX: 50 };
+  const WARP_RATE = 0.14;
   // 2段ステージ（どちらも中央が低い皿）。ワープから出た玉は上段を転がり、
   // 中央から落ちれば下段へ。下段の中央の溝から落ちればヘソの真上、そうでなければ左右にこぼれる
   const STAGE_UP = [[44, 324, 150, 331], [150, 331, 256, 324]];
@@ -45,37 +54,41 @@
   const LOW_CENTER = 0.7;  // 下段の中央の溝からヘソへ向かう割合
   const stageUpY = (x) => (x < 150 ? 324 + ((x - 44) / 106) * 7 : 331 - ((x - 150) / 106) * 7) - BALL - 1;
   const stageLowY = (x) => (x < 150 ? 346 + ((x - 72) / 78) * 6 : 352 - ((x - 150) / 78) * 6) - BALL - 1;
-  // 風車（当たった玉を回転方向にはじく）
-  const WINDMILL = { x: 24, y: 214, r: 5, spin: 1 };
+  // 風車（当たった玉を回転方向にはじく）。液晶の左下
+  const WINDMILL = { x: 27, y: 306, r: 5, spin: 1 };
 
   const HESO_GAP = 1.5;
   // ヘソ釘の開き → ヘソに来た玉が弾かれずに入る割合（開くほど入る）
-  const hesoAccept = (open) => Math.max(0, Math.min(1, open / 2.5));
+  // 道釘を通ってヘソまで来る玉は打ち出しの約15%。命釘で弾かれる分を合わせて、標準（2.25）で約20回転／1000円
+  const hesoAccept = (open) => Math.max(0, Math.min(1, open / 2.5)) * 0.55;
 
   function buildPins() {
     const pins = [];
     const inside = (x, y) => (y >= CY || Math.hypot(x - CX, y - CY) < R - 10) && x > 9 && x < W - 9;
     const outsideLcd = (x, y) => !(x > LCD.x0 - 5 && x < LCD.x1 + 5 && y > LCD.y0 - 8 && y < LCD.y1 + 5);
-    // 左ルート（液晶の左のすき間）
-    for (let row = 0, y = 110; y <= 316; row++, y += 11) {
-      for (let x = 12 + (row % 2) * 7; x <= 34; x += 14) {
-        if (Math.hypot(x - WINDMILL.x, y - WINDMILL.y) < 11) continue;
-        if (inside(x, y) && outsideLcd(x, y)) pins.push([x, y]);
-      }
-    }
-    // 右ルート（右打ち）
-    for (let row = 0, y = 110; y <= 316; row++, y += 13) {
-      for (let x = 266 + (row % 2) * 8; x <= 284; x += 16) if (inside(x, y) && outsideLcd(x, y)) pins.push([x, y]);
-    }
+    const add = (x, y) => { if (inside(x, y) && outsideLcd(x, y)) pins.push([x, y]); };
     // 液晶の上（天釘）
     for (let x = 60; x <= 240; x += 20) if (inside(x, 70)) pins.push([x, 70 + (x % 40 === 0 ? 0 : 4)]);
-    // 液晶の下・右寄りの釘（ステージ中央から真下のヘソへの通り道はあけておく）
-    for (let row = 0, y = 370; y <= 392; row++, y += 11) {
-      for (let x = 164 + (row % 2) * 7; x <= 246; x += 14) pins.push([x, y]);
+    // 左：左壁ぞいの寄り釘2列（少しずつ液晶側へ寄せて、ワープと風車へ玉を集める）
+    for (let i = 0, y = 122; y <= 292; i++, y += 10) {
+      const lean = (y - 122) * 0.035;
+      add(15 + lean, y);
+      add(27 + lean + (i % 2 ? 2 : 0), y + 5);
     }
+    // 風車のまわりの釘（左右にさばく）
+    add(17, 296); add(37, 296); add(15, 318); add(39, 318);
+    // 道釘の下：落としから落ちた玉を一般入賞口へ散らすバラ釘
+    for (const [x, y] of [[40, 372], [58, 382], [74, 392], [50, 396], [96, 398], [118, 404], [80, 430], [122, 432]]) add(x, y);
+    // ジャンプ釘とヘソまわり（道釘の終わりから命釘へ）
+    add(132, 392); add(138, 398); add(162, 398); add(168, 392);
+    // 右：右打ちの通路。アタッカーの上と下に釘を少しだけ
+    for (let i = 0, y = 112; y <= 216; i++, y += 13) add(i % 2 ? 268 : 284, y);
+    for (let i = 0, y = 256; y <= 316; i++, y += 13) add(i % 2 ? 284 : 270, y);
+    // 液晶の下・右寄り（ステージの右からこぼれた玉を散らす）
+    for (const [x, y] of [[182, 372], [196, 380], [182, 392], [200, 420], [260, 432]]) pins.push([x, y]);
     // ヘソの命釘
     const g = 4 + HESO_GAP;
-    pins.push([HESO.x - g, 410], [HESO.x + g, 410], [HESO.x + g + 6, 404]);
+    pins.push([HESO.x - g, 410], [HESO.x + g, 410]);
     return pins;
   }
 
@@ -150,6 +163,7 @@
       const keep = [];
       for (const b of this.balls) {
         b.life += dt;
+        if (b.life > 25) { this.stats.stuck = (this.stats.stuck || 0) + 1; continue; } // 引っかかった玉は消す
         b.vy += G * dt;
         b.x += b.vx * dt;
         b.y += b.vy * dt;
@@ -241,7 +255,8 @@
           }
         }
         // 道釘（線分）とステージ
-        for (const [x1, y1, x2, y2] of RAMPS.concat(STAGE)) {
+        const segs = this.attackerOpen ? RAMPS.concat(STAGE, WALLS) : RAMPS.concat(STAGE, WALLS, [ATTACKER_LID]);
+        for (const [x1, y1, x2, y2] of segs) {
           const ex = x2 - x1, ey = y2 - y1;
           const t = Math.max(0, Math.min(1, ((b.x - x1) * ex + (b.y - y1) * ey) / (ex * ex + ey * ey)));
           const px = x1 + ex * t, py = y1 + ey * t;
@@ -296,7 +311,7 @@
           this.handlers.onDenchu && this.handlers.onDenchu();
           continue;
         }
-        if (this.attackerOpen && b.x > ATTACKER.x0 && b.x < ATTACKER.x1 && b.y > ATTACKER.y - 3 && b.y < ATTACKER.y + 4) {
+        if (this.attackerOpen && b.x > ATTACKER.x0 && b.x < ATTACKER.x1 && b.y > ATTACKER.y - 6 && b.y < ATTACKER.y + 4) {
           this.stats.attacker++;
           this.handlers.onAttacker && this.handlers.onAttacker();
           continue;
@@ -383,11 +398,18 @@
       }
       g.fillStyle = "#fff";
       g.fillText("電チュー", DENCHU.x, DENCHU.y + 15);
-      // アタッカー
+      // アタッカー（右通路の途中。閉じているときはフタが通路をふさぐ）
       g.fillStyle = board.attackerOpen ? "#ffd257" : "#4a3a5a";
-      g.fillRect(ATTACKER.x0, ATTACKER.y + 3, ATTACKER.x1 - ATTACKER.x0, 5);
+      g.fillRect(ATTACKER.x0, ATTACKER.y + 2, ATTACKER.x1 - ATTACKER.x0, 6);
+      if (!board.attackerOpen) {
+        g.strokeStyle = "#8a7aa0"; g.lineWidth = 2;
+        g.beginPath(); g.moveTo(ATTACKER_LID[0], ATTACKER_LID[1]); g.lineTo(ATTACKER_LID[2], ATTACKER_LID[3]); g.stroke();
+      }
       g.fillStyle = "#fff";
-      g.fillText("アタッカー", (ATTACKER.x0 + ATTACKER.x1) / 2, ATTACKER.y + 16);
+      g.save(); g.translate(ATTACKER.x1 + 1, ATTACKER.y + 12); g.font = "7px sans-serif"; g.textAlign = "right"; g.fillText("アタッカー", 0, 0); g.restore();
+      // 右通路のレール
+      g.strokeStyle = "#f3c252"; g.lineWidth = 2;
+      for (const [x1, y1, x2, y2] of WALLS) { g.beginPath(); g.moveTo(x1, y1); g.lineTo(x2, y2); g.stroke(); }
       // 内レール
       g.strokeStyle = "rgba(243,194,82,.7)";
       g.lineWidth = 1.5;

@@ -306,9 +306,15 @@
       return steps;
     }
 
-    function normalReachSteps(reach, out) {
+    // 先バレ（先手役物落下）カスタムがONのときは、実機と同じく役物は入賞時に落ちるので、変動中には落ちない
+    // （デバイスと同時の落下は大当り濃厚なのでそのまま）
+    const dropMovedToEntry = (custom) => !!custom && !!custom.senbare && custom.senbare !== "off";
+
+    function normalReachSteps(reach, out, custom) {
+      const noDrop = dropMovedToEntry(custom);
       const subs = subsOf(reach, out);
-      const sp = reach.sp ? spCards(D.NORMAL_SP_YOKOKU, out) : [];
+      if (noDrop) delete subs.drop;
+      const sp = reach.sp ? spCards(D.NORMAL_SP_YOKOKU, out).filter((s) => !(noDrop && s.t === "hand")) : [];
       const drop = sp.filter((s) => s.t === "hand");
       const cards = sp.filter((s) => s.t !== "hand");
       const steps = [];
@@ -461,13 +467,13 @@
         const i = info(g, o);
         switch (g.id) {
           case "logo": steps.push({ t: "logo", color: o.color, info: i }); break;
-          case "sakura": steps.push({ t: "sakura", id: o.id, drop: !!o.drop, text: "西行妖が咲く…", info: i }); break;
+          case "sakura": steps.push({ t: "sakura", id: o.id, drop: !!o.drop && !dropMovedToEntry(custom), text: "西行妖が咲く…", info: i }); break;
           case "giji": steps.push({ t: "giji", n: o.n, yukari: !!o.yukari, reimu: !!o.reimu, info: i }); break;
           case "su": steps.push({ t: "su", step: o.step, color: o.color, char: o.char, info: i }); break;
           case "tokitome": steps.push({ t: "tokitome", color: o.color, info: i }); break;
           case "mono": steps.push({ t: "mono", color: o.color, info: i }); break;
           case "haikei": steps.push({ t: "bg", bg: o.bg, info: i }); break;
-          case "hand": if (!hold.forcedDrop) steps.push({ t: "hand", sound: o.sound, info: i }); break;
+          case "hand": if (!hold.forcedDrop && !dropMovedToEntry(custom)) steps.push({ t: "hand", sound: o.sound, info: i }); break;
           case "bunbun": steps.push({ t: "bunbun", color: o.color, headline: o.headline, info: i }); break;
           case "saisen": steps.push({ t: "saisen", item: o.item, color: o.color, line: choice(L.saisen[o.item]), info: i }); break;
           case "hud": steps.push({ t: "hud", word: o.word, color: o.color, info: i }); break;
@@ -519,7 +525,7 @@
       if (reach && reach.kind === "zenkaiten") steps.push({ t: "zenkaiten", info: { group: "リーチ", label: "全回転", rel: 1 } });
       else steps.push({ t: "reels", digits, reach: !!reach });
       if (reach) {
-        steps.push(...normalReachSteps(reach, out));
+        steps.push(...normalReachSteps(reach, out, custom));
         steps.push(...reviveSteps(D.NORMAL_REVIVE, reach, out, digits, steps));
       }
       steps.push({ t: "final", digits, hit: out.hit, charge: result.kind === "charge" });
@@ -590,7 +596,10 @@
         return steps;
       }
       if (result.kind === "charge") {
-        steps.push({ t: "charge", payout: S.payout.charge2R, promote: result.rush }, serif(choice(result.rush ? L.promote : L.charge)));
+        // 門番突破：昇格なら7割は突破で、残りは突破失敗のあと最後の陰陽玉落下で逆転
+        const mode = custom.chargeMode === "ippatsu" ? "ippatsu" : "toppa";
+        const toppaWin = mode === "toppa" && result.rush && rng() < 0.7;
+        steps.push({ t: "charge", payout: S.payout.charge2R, promote: result.rush, mode, toppaWin, lines: { start: choice(L.toppa.start), end: choice(toppaWin ? L.toppa.win : L.toppa.lose) } }, serif(choice(result.rush ? L.promote : L.charge)));
         return steps;
       }
 

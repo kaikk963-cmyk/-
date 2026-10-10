@@ -935,3 +935,14 @@ button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px s
 @keyframes bannerPulse { to { box-shadow: 0 0 22px #ff3b52; } }
 .stage.senbare-on .bg { filter: saturate(1.4) hue-rotate(-12deg) brightness(0.85); }
 .yinyang.armed svg { filter: drop-shadow(0 0 10px #ff5a5a) drop-shadow(0 0 18px #ffd257); }
+.chip.spec { background: #1d6b4a; color: #c9ffe0; border-color: #4fd88f; }
+
+/* 門番突破チャレンジ（霊力チャージ） */
+.toppa { left: 8%; right: 8%; top: 22%; text-align: center; padding: 10px; border-radius: 12px; background: rgba(40, 8, 12, 0.88); border: 2px solid var(--tone, #fff); box-shadow: 0 0 18px var(--tone, #fff); }
+.toppa > .crest { width: 18cqw; max-width: 64px; margin: 0 auto 4px; display: block; }
+.toppa .t { font-size: 3.6cqw; color: var(--muted); letter-spacing: 0.1em; }
+.toppa .gate { height: 12px; margin: 6px 0; border-radius: 6px; background: rgba(255, 255, 255, 0.12); overflow: hidden; border: 1px solid #a33; }
+.toppa .gate i { display: block; height: 100%; width: 100%; background: linear-gradient(90deg, #7a1a1a, #d33, #f77); transition: width 0.09s linear; }
+.toppa .m { font-family: var(--font-display); font-size: clamp(16px, 8.4cqw, 30px); color: var(--tone, #fff); }
+.shot-hint.urgent { background: #d4142a; color: #fff; font-size: 15px; padding: 8px 16px; animation: urgentBlink 0.5s steps(2) infinite; z-index: 9; }
+@keyframes urgentBlink { 50% { background: #ffd257; color: #2a0a0a; } }

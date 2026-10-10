@@ -62,7 +62,8 @@ for (const key of Object.keys(D.SPECS)) {
     if (hold.result.kind === "hit" || Math.random() < 0.05) {
       // 変動中の陰陽玉落下はシナリオを作らないと分からないので、ハズレは5%だけ抜き取って重み20倍で数える
       const w = hold.result.kind === "hit" ? 1 : 20;
-      for (const st of eng.normalScenario(hold, base).steps) {
+      // 先バレONだと変動中の落下は出ない（入賞時に落ちる）ので、変動中の落下は先バレOFFで数える
+      for (const st of eng.normalScenario(hold, { ...base, senbare: "off" }).steps) {
         if (st.t === "hand" && st.info && st.info.group === "陰陽玉落下（変動中）") counts["hand:" + st.info.label] = (counts["hand:" + st.info.label] || 0) + w;
       }
     }

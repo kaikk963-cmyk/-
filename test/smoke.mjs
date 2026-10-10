@@ -101,7 +101,8 @@ const covered = await page.evaluate(async () => {
     { t: "bonus", title: "異変解決BONUS", sub: "10R", rounds: 10, payout: 1400, ura: { color: "red", info: null } },
     { t: "challenge", kind: "koumakan", serif: true, device: "lever" }, { t: "challenge", kind: "ippatsu", at: -1 },
     { t: "rushResult", success: true, text: "霊夢図柄 RUSH確定" }, { t: "rushResult", success: false },
-    { t: "charge", payout: 280, promote: true }, { t: "rushContinue" }, { t: "rushEnd", chain: 5, balls: 12600 },
+    { t: "charge", payout: 280, promote: true, mode: "toppa", toppaWin: false, lines: { start: ["meiling", "通しませんよ！"], end: ["meiling", "まだまだですね"] } },
+    { t: "charge", payout: 280, promote: false, mode: "ippatsu" }, { t: "charge", payout: 280, promote: true, mode: "toppa", toppaWin: true }, { t: "rushContinue" }, { t: "rushEnd", chain: 5, balls: 12600 },
     { t: "reels", digits: [1, 2, 3], reach: false }, { t: "final", digits: [1, "C", 3], hit: false, charge: true },
   ];
   await stage.play(steps);
