@@ -150,8 +150,8 @@
     if (hold.senbare) hold.shown = "yin"; // 先バレした保留は陰陽玉の保留になる
     state.holds.push(hold);
     entryArrived();
-    // RUSH中のヘソ入賞は表に出さずに貯めておく（RUSH終了後に消化）
-    if (state.mode === "rush") return;
+    // RUSH中のヘソ入賞は保留の列には出さずに貯めておく（RUSH終了後に消化）。液晶の「ヘソ保留」の数だけ更新する
+    if (state.mode === "rush") { renderStatus(); return; }
     renderHolds();
     stage.entry(state.holds.length - 1, hold);
   }
@@ -178,6 +178,8 @@
     const w = entryWaiters;
     entryWaiters = [];
     w.forEach((r) => r());
+    // ハンドルを離したあとに盤面に残っていた玉が入ったときも、止まっている変動のループを起こして回す
+    if (!running && !state.completed) loop();
   }
   // 入賞を待つ（ハンドルを離したときに抜けられるよう、少しずつ確認する）
   const waitEntry = () => new Promise((r) => {
@@ -240,8 +242,10 @@
       last = t;
       try {
       // 盤面は常に描く（物理演算OFFのときは玉を打たない）
-      // 止め打ち：保留が満タンのあいだは打ち出しを止める（オーバー入賞で玉をむだにしない。BONUS中は止めない）
-      const full = !inBonus && (state.mode === "rush" ? state.rushHolds.length : state.holds.length) >= S.holdMax;
+      // 止め打ち：保留が3個たまったら打ち出しを止める。すでに打った玉が盤面に残っているので、
+      // 満タン（4個）で止めると残りの玉がオーバー入賞になってしまう。その分の空きを1つ残す（BONUS中は止めない）
+      const held = state.mode === "rush" ? state.rushHolds.length : state.holds.length;
+      const full = !inBonus && held >= S.holdMax - 1;
       tomeuchi = useBoard() && handleOn && full && state.settings.tomeuchi === "on";
       board.firing = useBoard() && handleOn && !state.completed && !tomeuchi;
       board.mode = inBonus ? "bonus" : state.mode;
@@ -293,7 +297,7 @@
     // 自動打ち分け：RUSH・BONUS中は右打ち、通常時は左打ちに切り替える
     if (state.settings.autoShot === "on" && (state.settings.shot === "right") !== needRight) setShot(needRight ? "right" : "left");
     const right = state.settings.shot === "right";
-    const text = needRight && !right ? "右打ちしてください ▶" : !needRight && right && handleOn ? "◀ 通常時は左打ち" : tomeuchi ? "保留満タン・止め打ち中" : "";
+    const text = needRight && !right ? "右打ちしてください ▶" : !needRight && right && handleOn ? "◀ 通常時は左打ち" : tomeuchi ? "止め打ち中（保留がたまっています）" : "";
     if (text !== lastHint) {
       lastHint = text;
       $("shotHint").textContent = text;
@@ -614,7 +618,8 @@
 
   function renderStatus() {
     if (state.mode === "rush") {
-      stage.setStatus(`<span class="chip rush">弾幕RUSH ${state.chain}連</span><span class="chip st">残り${state.stLeft}</span>`);
+      // RUSH中にヘソに入った玉は、実機と同じく保留として貯めてRUSH終了後に回す（その数を出しておく）
+      stage.setStatus(`<span class="chip rush">弾幕RUSH ${state.chain}連</span><span class="chip st">残り${state.stLeft}</span>${state.holds.length ? `<span class="chip">ヘソ保留${state.holds.length}</span>` : ""}`);
     } else {
       stage.setStatus(`<span class="chip">通常</span><span class="chip st">${state.sinceBonus}</span>`);
     }
@@ -1108,7 +1113,7 @@
       body += field("回転率（1000円あたり）", `ヘソへの入賞しやすさ。いまのスペック（${S.label}）の等価ボーダーは約${border().toFixed(1)}回転。保留が満タンのときの入賞は無駄になるので、実測はこれより少し下がる。`,
         `<input id="rateRange" class="range" type="range" min="12" max="26" step="0.5" value="${st.rate}">`, `<b id="rateVal">${st.rate}回転</b>`).replace("ヘソへの入賞しやすさ。", "物理盤面がOFFのときのヘソへの入賞しやすさ。");
       body += field("演出スピード", "「実機」は実際の台に近い時間で動く。保留が少ないとハズレ変動は約7秒、保留3個以上で約2.5秒に短縮。大当りはアタッカーに10個入るごとに1ラウンドが終わる。速くしても、物理盤面の玉の動きと打ち出しは最大2.5倍まで。", seg("settings.speed", SPEED_LABEL, st.speed));
-      body += field("止め打ち", "ONにすると、保留が4個たまっているあいだは打ち出しを自動で止める（実機の止め打ちと同じ）。保留満タンのときにヘソに入った玉は回転にならないので、玉のむだを減らせる。BONUS中は止めない。", seg("settings.tomeuchi", { on: "ON", off: "OFF" }, st.tomeuchi));
+      body += field("止め打ち", "ONにすると、保留が3個たまったら打ち出しを自動で止める（実機の止め打ちと同じ。すでに打った玉の分の空きを1つ残す）。保留満タンのときにヘソに入った玉は回転にならないので、玉のむだを減らせる。BONUS中は止めない。", seg("settings.tomeuchi", { on: "ON", off: "OFF" }, st.tomeuchi));
       body += field("自動PUSH", "ONにすると、PUSHや八卦炉レバーの指示をすぐ自動で消化する。OFFでも数秒待てば自動で進む。", seg("settings.autoPush", { off: "OFF", on: "ON" }, st.autoPush));
       body += field("サウンド", "", seg("settings.sound", { on: "ON", off: "OFF" }, st.sound));
       body += field("BGM", "オリジナルの短いループ曲", seg("settings.bgm", { on: "ON", off: "OFF" }, st.bgm));
