@@ -1426,8 +1426,18 @@
       banner.innerHTML = n === 0 ? "<b>先バレ</b> 当該変動" : `<b>先バレ</b> あと${n}変動`;
     }
 
+    // オーバー入賞：保留が満タンのときにヘソに入った玉。保留の列を光らせて「満タン」と出す
+    let overTimer = null;
+    function overEntry() {
+      holdsEl.classList.remove("over");
+      void holdsEl.offsetWidth;
+      holdsEl.classList.add("over");
+      clearTimeout(overTimer);
+      overTimer = setTimeout(() => holdsEl.classList.remove("over"), 700);
+    }
+
     return {
-      play, setMode, setStatus, renderHolds, entry, input, overlay, clearSpin, senbareBanner,
+      play, setMode, setStatus, renderHolds, entry, input, overlay, clearSpin, senbareBanner, overEntry,
       // 立ち絵・背景の差し替えを反映する
       refreshArt() {
         reels.refresh();

@@ -793,14 +793,15 @@ button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px s
 .shot-hint { position: absolute; left: 50%; top: 8px; transform: translateX(-50%); padding: 4px 12px; border-radius: 99px; background: var(--shu); color: #fff; font-weight: 700; font-size: 13px; animation: pulse 0.5s ease-in-out infinite alternate; white-space: nowrap; }
 
 /* 液晶を盤面に埋め込む */
-.machine-board { position: relative; aspect-ratio: 300 / 464; max-width: 100%; border-radius: 18px; overflow: hidden; background: var(--night-2); }
+/* 盤面の縦横比と液晶の位置は、board.js の盤面（実機の釘配置図と同じ形）から app.js が設定する */
+.machine-board { position: relative; aspect-ratio: var(--board-ar, 300 / 325); max-width: 100%; border-radius: 18px; overflow: hidden; background: var(--night-2); }
 .machine-board .board { position: absolute; inset: 0; width: 100%; height: 100%; aspect-ratio: auto; border-radius: 0; }
 .machine-board .stage {
   position: absolute;
-  left: 14%;
-  top: 19.828%;
-  width: 72%;
-  height: 48.707%;
+  left: var(--lcd-l, 23.29%);
+  top: var(--lcd-t, 21.13%);
+  width: var(--lcd-w, 59.54%);
+  height: var(--lcd-h, 46.25%);
   aspect-ratio: auto;
   container-type: size;
   border-radius: 10px;
@@ -946,3 +947,6 @@ button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px s
 .toppa .m { font-family: var(--font-display); font-size: clamp(16px, 8.4cqw, 30px); color: var(--tone, #fff); }
 .shot-hint.urgent { background: #d4142a; color: #fff; font-size: 15px; padding: 8px 16px; animation: urgentBlink 0.5s steps(2) infinite; z-index: 9; }
 @keyframes urgentBlink { 50% { background: #ffd257; color: #2a0a0a; } }
+/* オーバー入賞（保留満タン） */
+.holds.over::after { content: "保留満タン"; position: absolute; left: 50%; bottom: 105%; transform: translateX(-50%); font-size: 10px; color: #ffd257; background: rgba(0, 0, 0, 0.7); padding: 1px 6px; border-radius: 6px; white-space: nowrap; }
+.holds.over .hold:not(.empty) { box-shadow: 0 0 8px #ffd257; }

@@ -53,7 +53,8 @@ for (const c of CASES) {
     const right = s.mode === "rush" || !!(await page.$(".bonus-screen"));
     if (c.board === "on" && right !== lastRight) { await page.click(right ? "#rightShot" : "#leftShot"); lastRight = right; }
     const prog = s.spins + s.rushSpins;
-    if (prog !== lastSpins) { lastSpins = prog; lastProgress = Date.now(); }
+    // 物理盤面のBONUS（RUSH中は20R）は払い出しに1分以上かかり、その間は回転しないので止まりとは数えない
+    if (prog !== lastSpins || right && (await page.$(".bonus-screen"))) { lastSpins = prog; lastProgress = Date.now(); }
     else if (Date.now() - lastProgress > 25000) { stuck = true; break; }
     if (s.holds.length > 4 || s.rushHolds.length > 4) bad.push("保留が4個を超えた");
     if (s.stLeft < 0 || s.stLeft > ({ ama: 40, ama99: 64 }[c.spec] || 130)) bad.push(`ST残りが範囲外 ${s.stLeft}`);

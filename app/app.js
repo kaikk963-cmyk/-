@@ -8,7 +8,7 @@
   const fmt = (n) => Math.round(n).toLocaleString("ja-JP");
 
   const DEFAULT_CUSTOM = { senbare: "s40", sakiyomi: "osusume", leverBuru: "off", impact: "off", rushMode: "default", challenge: "koumakan", chargeMode: "toppa" };
-  const DEFAULT_SETTINGS = { boardV: 6, board: "on", shot: "left", autoShot: "on", leftStrength: 45, rightStrength: 90, hesoOpen: 2.25, rate: 18, speed: "real", autoPush: "off", sound: "on", bgm: "off", volume: 0.7, vibe: "on", showRel: "on", presetYakumono: "std", presetSenbare: "std", spec: "middle" };
+  const DEFAULT_SETTINGS = { boardV: 8, board: "on", shot: "left", autoShot: "on", leftStrength: 45, rightStrength: 90, hesoOpen: 2.25, rate: 18, speed: "real", autoPush: "off", sound: "on", bgm: "off", volume: 0.7, vibe: "on", showRel: "on", presetYakumono: "std", presetSenbare: "std", spec: "middle" };
   const SPEEDS = { real: 1, slow: 1.35, normal: 1, fast: 0.5, turbo: 0.2 };
   const SPEED_LABEL = { real: "実機", normal: "標準", fast: "高速", turbo: "爆速" };
   const DEFAULT_DEV = { overrides: {}, force: "none", senbare: "off", rush6000: null, dropBtn: "on" };
@@ -141,7 +141,10 @@
   }
 
   function addHold() {
-    if (state.holds.length >= S.holdMax) return; // オーバー入賞（保留が満タン）
+    if (state.holds.length >= S.holdMax) { // オーバー入賞（保留が満タン）。回転は増えないので、液晶の保留表示で知らせる
+      if (state.mode === "normal") stage.overEntry();
+      return;
+    }
     const hold = engine.makeHold("normal", state.custom, takeForce("normal"));
     hold.shown = hold.reveal === "entry" ? hold.color : null;
     if (hold.senbare) hold.shown = "yin"; // 先バレした保留は陰陽玉の保留になる
@@ -183,6 +186,15 @@
 
   function setupBoard() {
     const B = window.GensouBoard;
+    // 盤面の形（縦横比）と液晶の位置を、盤面のデータに合わせる
+    const mb = document.querySelector(".machine-board");
+    if (mb) {
+      mb.style.setProperty("--board-ar", `${B.W} / ${B.H}`);
+      mb.style.setProperty("--lcd-l", `${(B.LCD.x0 / B.W) * 100}%`);
+      mb.style.setProperty("--lcd-t", `${(B.LCD.y0 / B.H) * 100}%`);
+      mb.style.setProperty("--lcd-w", `${((B.LCD.x1 - B.LCD.x0) / B.W) * 100}%`);
+      mb.style.setProperty("--lcd-h", `${((B.LCD.y1 - B.LCD.y0) / B.H) * 100}%`);
+    }
     board = new B.Board({
       hesoOpen: state.settings.hesoOpen,
       handlers: {

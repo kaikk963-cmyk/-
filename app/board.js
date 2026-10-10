@@ -1,95 +1,60 @@
 // 玉を打つ盤面の物理演算と描画。
-// 左のレールから玉を打ち出し、釘に当たりながら落ちて、ヘソ（始動口）・電チュー・アタッカー・一般入賞口に入る。
+// 実機の釘配置図（ビスティ「P新世紀エヴァンゲリオン15」の遊技盤）を、縮尺をそろえてそのまま写した盤面。
+// 釘の位置は図から1本ずつ読み取ったもので、外枠・ワープ・ステージ・右打ちの通路・アタッカー・電チュー・入賞口も図の位置。
 // 物理部分（Board）は DOM に依存しないので node でも動く。
 (function (root) {
-  // 液晶を中央に埋め込んだ縦長の盤面。玉は液晶の左右のすき間を流れ、液晶の下のステージ・ヘソ・電チュー・アタッカーへ向かう
   const W = 300;
-  const H = 464;
-  const CX = 150;
-  const CY = 180;
-  const R = 150;          // 盤面上部の円弧（外レール）
-  const BALL = 3;
-  const PIN = 1.4;
-  const G = 420;          // 重力 px/s^2
-  const SUB = 1 / 240;    // 物理の刻み
+  const H = 324.66;
+  const [CX, CY] = [155.22,155.22];
+  const R = 155.22;          // 外レール（盤面の外枠の円）
+  const R_IN = 148.26;    // 内レール（打ち出しレーンと盤面の仕切り）
+  const RAIL_TOP_Y = 85.99;     // 内レールの上端。ここより上で玉が盤面に出る
+  const LANE_BOTTOM_Y = 196.63; // 打ち出しレーンの下端（発射位置）
+  const RIGHT_X = 300.0, RIGHT_WALL_Y = 99.26; // 右の外枠（ここから下はまっすぐ）
+  const BALL = 2.9;  // 玉の半径（図の縮尺で約11mm）
+  const PIN = 0.55;  // 釘の半径（玉11mmに対して釘は約2mm）
+  const G = 420;     // 重力 px/s^2
+  const SUB = 1 / 240;
 
-  // 液晶（ここに演出画面をはめ込む）
-  const LCD = { x0: 42, x1: 258, y0: 92, y1: 318 };
-  // ---- 盤面レイアウト（ビスティの実機の釘配置を参考にした構成） ----
-  // 左：左壁ぞいの寄り釘2列 → 液晶左下の風車 → 斜めに長く続く道釘 → ジャンプ釘 → ヘソ（命釘2本）
-  // 左下：道釘の下に一般入賞口が3つ。中央：液晶下のステージからヘソの真上へ
-  // 右：右打ちの玉は液晶の右の細い通路を落ち、途中のアタッカー → 通路の下で左へ曲がって電チューへ
-  const HESO = { x: 150, y: 418, w: 4.2 };
-  const DENCHU = { x: 220, y: 398, w: 10 }; // w は羽根が開いたときの受け口の半幅
-  // アタッカー：右通路の途中。開いていれば通路を落ちてくる玉を受け止める。閉じていればフタの上を転がって下へ
-  const ATTACKER = { x0: 261, x1: 293, y: 236 };
-  const ATTACKER_LID = [294, 229, 272, 238]; // 液晶側に玉1個ぶんのすき間をあけて、閉じているときは横から下へ流す
-  const POCKETS = [{ x: 54, y: 418, w: 5, pay: 5 }, { x: 80, y: 428, w: 5, pay: 5 }, { x: 114, y: 438, w: 5, pay: 5 }, { x: 236, y: 438, w: 4, pay: 1 }];
-  // 道釘（玉が転がる道）。途中のすき間（落とし）から落ちた玉は一般入賞口かアウトへ
-  const RAMPS = [
-    // 液晶の屋根（頂点を右寄りにして、左打ちで上まで届いた玉は左ルートへ転がるようにする）
-    [40, 94, 176, 80], [176, 80, 260, 94],
-    // 風車の下からヘソへ向かう長い道釘（2か所の落としあり）
-    [12, 330, 47, 346], [57, 351, 89, 366], [100, 371, 124, 383],
-  ];
-  // 右打ちの通路の壁（実線のレール）
-  const WALLS = [
-    // 通路の下で左へ曲げて電チューへ寄せる
-    [296, 330, 262, 350], [262, 350, 236, 384],
-    // 電チューの右の返し
-    [244, 404, 268, 420],
-  ];
+  // 液晶（ここに演出画面をはめ込む）＝図の液晶の窓
+  const LCD = {"x0":69.86,"y0":68.6,"x1":248.47,"y1":218.76};
+  const ROOF = [[69.86,68.6,164.7,44.89],[164.7,44.89,248.47,68.6]];
+  // 図から読み取った釘と、左の寄り釘（図の2本のレールの目盛り）
+  const PINS = [[62.59,281.66],[39.83,195.36],[70.81,281.66],[93.57,282.3],[49.0,73.34],[93.57,278.19],[35.72,235.19],[30.03,195.68],[120.44,296.52],[89.46,289.57],[26.87,216.86],[40.78,213.7],[34.14,93.89],[18.65,178.61],[43.62,79.98],[173.87,293.99],[261.43,232.67],[23.08,224.13],[40.78,217.81],[103.37,281.98],[40.78,221.6],[252.27,232.67],[261.43,224.13],[112.86,304.74],[56.9,274.39],[32.24,221.6],[165.02,292.73],[252.27,228.56],[137.51,292.73],[252.27,224.13],[27.5,178.61],[66.39,274.39],[19.28,212.12],[32.24,217.81],[84.4,272.18],[49.95,64.49],[25.92,89.78],[31.3,183.35],[43.31,91.68],[128.35,290.2],[36.35,203.27],[61.01,266.81],[84.09,282.3],[110.33,296.21],[77.13,263.96],[38.88,205.8],[98.0,289.57],[21.5,203.27],[119.18,285.14],[80.93,280.72],[74.92,274.08],[174.18,290.2],[30.03,211.17],[111.59,281.35],[42.04,244.99],[69.86,259.85],[32.24,214.01],[12.01,184.62],[49.32,61.01],[24.34,205.16],[14.54,197.89],[183.35,285.14],[9.17,193.47],[46.15,89.78],[68.6,270.6],[51.84,261.75],[83.46,267.12],[48.37,248.47],[34.14,186.2],[12.01,195.36],[51.53,250.05],[92.94,271.87],[89.78,270.28],[108.43,279.77],[63.86,256.69],[96.1,273.45],[105.27,278.19],[101.16,291.15],[60.7,255.11],[67.02,258.27],[80.3,265.54],[57.53,253.21],[107.17,294.63],[71.76,272.5],[57.85,264.91],[99.26,275.03],[54.69,263.33],[102.42,276.61],[122.02,286.72],[86.62,268.7],[14.54,186.83],[54.37,251.63],[45.21,246.58],[177.34,288.3],[180.51,286.72],[125.18,288.3],[104.0,292.73],[47.1,54.37],[48.37,57.85]];
+  const YORI = [[21.56,93.89],[31.38,97.68],[20.35,101.48],[29.71,105.27],[19.17,109.06],[28.61,112.86],[18.26,116.65],[27.85,120.44],[17.37,124.24],[27.34,128.03],[16.91,131.82],[27.03,135.62],[16.46,139.41],[26.8,143.2],[16.15,147.0],[26.65,150.79],[15.84,154.58],[26.72,158.38],[16.07,162.17],[27.18,165.96],[16.38,169.76],[27.83,173.55],[28.97,181.14]];
+  const LEFT_EDGE = [[5.69,196.63],[7.27,204.53],[9.17,212.43],[11.38,220.34],[14.23,228.24],[17.7,236.14],[21.5,244.05],[25.92,251.95],[30.66,259.85],[35.72,267.76],[41.41,275.66],[47.42,283.56],[54.69,291.46],[62.28,299.37],[70.18,307.27],[79.35,324.66]];
+  const WINDMILL = { x: 35.09, y: 234.56, r: 6, spin: 1 };
+  const HESO = { x: 150.47, y: 294.63, w: 3.6 };
+  const INOCHI_Y = 289.88;
+  const POCKETS = [[66.7,287.04,5],[93.57,294.94,5],[104.64,299.68,5],[210.54,307.9,1]].map(([x, y, pay]) => ({ x, y, w: 3.6, pay }));
+  // ワープ：液晶の左の青い通路。入口に入った玉は通路を通って液晶下のステージに出る
+  const WARP_IN = [[57.85,77.77],[69.86,82.82]];
+  const FUNNEL = [[57.85,79.66,45.84,190.31],[45.84,190.31,51.53,218.76]];
+  // ステージ：ワープの出口から中央の皿へ転がる。皿の中央の穴から落ちればヘソの真上
+  const STAGE_PATH = [[50.9,225.08],[133.09,263.01],[150.47,278.82]];
+  const STAGE_EXIT = [150.47,284.51];
+  const STAGE_WALLS = [[51.53,218.76,49.0,236.14],[49.0,236.14,134.67,275.66],[134.67,275.66,145.73,281.98],[155.22,281.98,166.28,275.66],[166.28,275.66,243.73,237.72],[243.73,237.72,248.47,218.76]];
+  const STAGE_CENTER = 0.2; // ステージに乗った玉のうち、中央の穴から落ちる割合
+  // 右打ち：液晶の右の通路 → アタッカー（通路の右寄り）→ 左のすき間を抜けた玉は下の電チューへ
+  const RIGHT_WALLS = [[288.62,75.87,288.62,142.89],[259.54,152.37,259.54,212.43],[259.54,152.37,288.62,142.89],[248.47,218.76,243.73,234.56],[243.73,234.56,243.73,263.01],[243.73,263.01,238.04,267.76],[261.43,234.56,261.43,263.01],[261.43,263.01,227.92,282.61]];
+  const ATTACKER = {"x0":260.17,"y":141.62,"x1":286.72};
+  const ATTACKER_LID = [286.72,139.73,260.17,143.52];
+  const [DX, DY] = [201.37,286.41];
+  const DENCHU = { x: DX, y: DY, w: 5 };
+  const DENCHU_SLIDE = [227.92,282.61,207.69,285.77];
+  const DENCHU_LID = [DX + 6, DY - 1.2, DX - 6, DY + 0.4];
   const RAIL_FRICTION = 0.55;
-  // 内レール：打ち出しレーン（盤面の左端）と盤面を仕切る。上から落ちてきた玉はここより右を通る
-  const INNER_RAIL = { x: 10, y0: 128, y1: 322 };
-  // ワープ入口（液晶の左の縁）に入った玉は、液晶下のステージに出てくる
-  const WARP = { x0: 33, x1: 41, y0: 214, y1: 224, outX: 50 };
-  const WARP_RATE = 0.14;
-  // 2段ステージ（どちらも中央が低い皿）。ワープから出た玉は上段を転がり、
-  // 中央から落ちれば下段へ。下段の中央の溝から落ちればヘソの真上、そうでなければ左右にこぼれる
-  const STAGE_UP = [[44, 324, 150, 331], [150, 331, 256, 324]];
-  const STAGE_LOW = [[72, 346, 150, 352], [150, 352, 228, 346]];
-  const STAGE = STAGE_UP.concat(STAGE_LOW);
-  const UP_CENTER = 0.55;   // 上段の中央から下段へ落ちる割合
-  const LOW_CENTER = 0.7;  // 下段の中央の溝からヘソへ向かう割合
-  const stageUpY = (x) => (x < 150 ? 324 + ((x - 44) / 106) * 7 : 331 - ((x - 150) / 106) * 7) - BALL - 1;
-  const stageLowY = (x) => (x < 150 ? 346 + ((x - 72) / 78) * 6 : 352 - ((x - 150) / 78) * 6) - BALL - 1;
-  // 風車（当たった玉を回転方向にはじく）。液晶の左下
-  const WINDMILL = { x: 27, y: 306, r: 5, spin: 1 };
 
-  const HESO_GAP = 1.5;
-  // ヘソ釘の開き → ヘソに来た玉が弾かれずに入る割合（開くほど入る）
-  // 道釘を通ってヘソまで来る玉は打ち出しの約15%。命釘で弾かれる分を合わせて、標準（2.25）で約20回転／1000円
-  const hesoAccept = (open) => Math.max(0, Math.min(1, open / 2.5)) * 0.55;
+  const segsOf = (pts) => pts.slice(1).map((p, i) => [pts[i][0], pts[i][1], p[0], p[1]]);
+  const STATIC_SEGS = [...ROOF, ...FUNNEL, ...STAGE_WALLS, ...RIGHT_WALLS, ...segsOf(LEFT_EDGE), DENCHU_SLIDE];
 
-  function buildPins() {
-    const pins = [];
-    const inside = (x, y) => (y >= CY || Math.hypot(x - CX, y - CY) < R - 10) && x > 9 && x < W - 9;
-    const outsideLcd = (x, y) => !(x > LCD.x0 - 5 && x < LCD.x1 + 5 && y > LCD.y0 - 8 && y < LCD.y1 + 5);
-    const add = (x, y) => { if (inside(x, y) && outsideLcd(x, y)) pins.push([x, y]); };
-    // 液晶の上（天釘）
-    for (let x = 60; x <= 240; x += 20) if (inside(x, 70)) pins.push([x, 70 + (x % 40 === 0 ? 0 : 4)]);
-    // 左：左壁ぞいの寄り釘2列（少しずつ液晶側へ寄せて、ワープと風車へ玉を集める）
-    for (let i = 0, y = 122; y <= 292; i++, y += 10) {
-      const lean = (y - 122) * 0.035;
-      add(15 + lean, y);
-      add(27 + lean + (i % 2 ? 2 : 0), y + 5);
-    }
-    // 風車のまわりの釘（左右にさばく）
-    add(17, 296); add(37, 296); add(15, 318); add(39, 318);
-    // 道釘の下：落としから落ちた玉を一般入賞口へ散らすバラ釘
-    for (const [x, y] of [[40, 372], [58, 382], [74, 392], [50, 396], [96, 398], [118, 404], [80, 430], [122, 432]]) add(x, y);
-    // ジャンプ釘とヘソまわり（道釘の終わりから命釘へ）
-    add(132, 392); add(138, 398); add(162, 398); add(168, 392);
-    // 右：右打ちの通路。アタッカーの上と下に釘を少しだけ
-    for (let i = 0, y = 112; y <= 216; i++, y += 13) add(i % 2 ? 268 : 284, y);
-    for (let i = 0, y = 256; y <= 316; i++, y += 13) add(i % 2 ? 284 : 270, y);
-    // 液晶の下・右寄り（ステージの右からこぼれた玉を散らす）
-    for (const [x, y] of [[182, 372], [196, 380], [182, 392], [200, 420], [260, 432]]) pins.push([x, y]);
-    // ヘソの命釘
-    const g = 4 + HESO_GAP;
-    pins.push([HESO.x - g, 410], [HESO.x + g, 410]);
-    return pins;
+  // ヘソ釘（命釘2本）の間隔。設定の「ヘソ釘の開き」（0.5〜2.5）で実際に広がる。
+  // 2本の間を抜けた玉だけがハカマの中を落ちてヘソに入る（入ったように見えて弾かれる、ということはない）
+  const inochiHalf = (open) => 3.46 + open * 0.36; // 2.25で図の命釘の位置
+
+  function buildPins(open) {
+    const g = inochiHalf(open);
+    return PINS.concat(YORI, [[HESO.x - g, INOCHI_Y], [HESO.x + g, INOCHI_Y]]);
   }
 
   class Board {
@@ -103,25 +68,26 @@
       this.fireAcc = 0;
       this.denchuOpen = false;
       this.denchuT = 0;
-      this.setHeso(opts.hesoOpen ?? 3);
+      this.attackerOpen = false;
       this.handlers = opts.handlers || {};
       this.stats = { fired: 0, heso: 0, denchu: 0, attacker: 0, pocket: 0, out: 0 };
+      this.setHeso(opts.hesoOpen ?? 2.25);
     }
     setHeso(open) {
       this.hesoOpen = open;
-      this.accept = hesoAccept(open);
-      if (this.pins) return;
-      this.pins = buildPins();
-      // 当たり判定を速くするための格子
+      this.pins = buildPins(open);
+      const g = inochiHalf(open);
+      // ハカマ：命釘からヘソの口までの左右の壁
+      this.hakama = [[HESO.x - g, INOCHI_Y, HESO.x - g + 0.5, HESO.y + 3], [HESO.x + g, INOCHI_Y, HESO.x + g - 0.5, HESO.y + 3]];
       this.grid = new Map();
       for (const p of this.pins) {
-        const k = `${Math.floor(p[0] / 12)},${Math.floor(p[1] / 12)}`;
+        const k = `${Math.floor(p[0] / 10)},${Math.floor(p[1] / 10)}`;
         if (!this.grid.has(k)) this.grid.set(k, []);
         this.grid.get(k).push(p);
       }
     }
     nearPins(x, y) {
-      const gx = Math.floor(x / 12), gy = Math.floor(y / 12);
+      const gx = Math.floor(x / 10), gy = Math.floor(y / 10);
       const out = [];
       for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) {
         const a = this.grid.get(`${gx + i},${gy + j}`);
@@ -132,12 +98,18 @@
     launch() {
       if (this.handlers.onFire && this.handlers.onFire() === false) return;
       this.stats.fired++;
-      // ハンドルの強さで打ち出しの速さが決まる（ばらつきあり）
+      // 打ち出しレーンの下から、外レールにそって上へ。ハンドルの強さで速さが決まる（ばらつきあり）
       const v = 230 + this.strength * 3.4 + (this.rng() - 0.5) * 18;
-      this.balls.push({ x: CX - R + BALL + 1, y: CY + 30, vx: 0, vy: -v, life: 0, up: false });
+      const rm = (R + R_IN) / 2;
+      const y = LANE_BOTTOM_Y - 2;
+      const x = CX - Math.sqrt(rm * rm - (y - CY) * (y - CY));
+      const nx = (x - CX) / rm, ny = (y - CY) / rm;
+      // 円の接線のうち上向きのほう
+      let tx = -ny, ty = nx;
+      if (ty > 0) { tx = -tx; ty = -ty; }
+      this.balls.push({ x, y, vx: tx * v, vy: ty * v, life: 0, lane: true, up: false });
     }
     step(dt) {
-      // 打ち出し
       if (this.firing) {
         this.fireAcc += dt * this.fireRate;
         while (this.fireAcc >= 1) {
@@ -161,35 +133,77 @@
     }
     sub(dt) {
       const keep = [];
+      const segs = STATIC_SEGS.concat(this.hakama, this.attackerOpen ? [] : [ATTACKER_LID], this.denchuOpen ? [] : [DENCHU_LID]);
       for (const b of this.balls) {
         b.life += dt;
         if (b.life > 25) { this.stats.stuck = (this.stats.stuck || 0) + 1; continue; } // 引っかかった玉は消す
+        // ステージ上を転がっている玉（行き先は乗った時点で決まる）
+        if (b.stage) {
+          const st = b.stage;
+          st.t += dt;
+          const k = Math.min(1, st.t / st.dur);
+          const n = STAGE_PATH.length - 1;
+          const f = (1 - Math.pow(1 - k, 2)) * n;
+          const i = Math.min(n - 1, Math.floor(f)), u = f - i;
+          const wob = Math.sin(k * Math.PI * st.swings) * (1 - k) * 10;
+          b.x = STAGE_PATH[i][0] + (STAGE_PATH[i + 1][0] - STAGE_PATH[i][0]) * u + wob * 0.6;
+          b.y = STAGE_PATH[i][1] + (STAGE_PATH[i + 1][1] - STAGE_PATH[i][1]) * u - BALL - 1;
+          if (k >= 1) {
+            b.stage = null;
+            if (st.center) { b.x = STAGE_EXIT[0] + (this.rng() - 0.5) * 6; b.y = STAGE_EXIT[1]; b.vx = 0; b.vy = 30; }
+            else {
+              // ステージの手前にこぼれて、下の道釘のほうへ落ちる
+              const p = 0.15 + this.rng() * 0.75;
+              const [x1, y1, x2, y2] = STAGE_WALLS[1];
+              b.x = x1 + (x2 - x1) * p; b.y = y1 + (y2 - y1) * p + BALL + 2; b.vx = (this.rng() - 0.5) * 20; b.vy = 10;
+            }
+          }
+          keep.push(b);
+          continue;
+        }
+        // ほとんど止まったままの玉は、実際の玉のように少し揺れて釘から落ちる。
+        // 同じところで何度も止まる玉は、実機なら後ろの玉に押されて抜けるので、釘のすき間をすり抜けさせる
+        if (!b.lane && b.vx * b.vx + b.vy * b.vy < 25) {
+          b.slow = (b.slow || 0) + dt;
+          if (b.slow > 0.4) {
+            b.vx = (this.rng() < 0.5 ? -1 : 1) * (20 + this.rng() * 25); b.vy = -12; b.slow = 0;
+            b.nudges = (b.nudges || 0) + 1;
+            if (b.nudges >= 3) { b.ghost = 0.18; b.nudges = 0; b.vx *= 0.3; b.vy = 25; }
+          }
+        } else { b.slow = 0; if (b.vx * b.vx + b.vy * b.vy > 2500) b.nudges = 0; }
+        if (b.ghost > 0) b.ghost -= dt;
         b.vy += G * dt;
         b.x += b.vx * dt;
         b.y += b.vy * dt;
 
-        // 外レール（上部の円弧）：内側に押し戻して外向きの速度を消す。レールの摩擦で減速する
-        if (b.y < CY) {
-          const dx = b.x - CX, dy = b.y - CY;
-          const d = Math.hypot(dx, dy);
-          const lim = R - BALL;
-          if (d > lim) {
-            const nx = dx / d, ny = dy / d;
-            b.x = CX + nx * lim;
-            b.y = CY + ny * lim;
-            const vn = b.vx * nx + b.vy * ny;
-            if (vn > 0) { b.vx -= vn * nx; b.vy -= vn * ny; }
-            const f = Math.exp(-RAIL_FRICTION * dt);
-            b.vx *= f; b.vy *= f;
-          }
+        const dx0 = b.x - CX, dy0 = b.y - CY;
+        const d0 = Math.hypot(dx0, dy0);
+        const ring = (lim, outside) => {
+          // 円のレール：outside=false なら内側に押し戻す、true なら外側に押し出す
+          if (outside ? d0 >= lim : d0 <= lim) return;
+          const nx = dx0 / d0, ny = dy0 / d0;
+          b.x = CX + nx * lim; b.y = CY + ny * lim;
+          const vn = b.vx * nx + b.vy * ny;
+          if (outside ? vn < 0 : vn > 0) { b.vx -= vn * nx; b.vy -= vn * ny; }
+          const fr = Math.exp(-RAIL_FRICTION * dt);
+          b.vx *= fr; b.vy *= fr;
+        };
+        if (b.lane) {
+          // 打ち出しレーン：外レールと内レールのあいだ
+          ring(R - BALL, false);
+          if (b.y > RAIL_TOP_Y && b.x < CX) ring(R_IN + BALL, true);
+          if (b.y < RAIL_TOP_Y && b.x < CX + 40) { b.lane = false; b.up = true; }
+          // 盤面まで届かずに戻ってきた玉（ファウル）
+          if (b.vy > 0 && b.y > LANE_BOTTOM_Y + 2) { this.stats.out++; continue; }
+          keep.push(b);
+          continue;
         }
-        // 左右の壁。盤面に入った玉は内レール（打ち出しレーンとの仕切り）より内側を落ちる
-        const leftWall = b.up && b.y > INNER_RAIL.y0 && b.y < INNER_RAIL.y1 ? INNER_RAIL.x + BALL : 4 + BALL;
-        if (b.x < leftWall) { b.x = leftWall; b.vx = Math.abs(b.vx) * 0.4 + 6; }
-        if (b.x > W - 4 - BALL) { b.x = W - 4 - BALL; b.vx = -Math.abs(b.vx) * 0.4; }
-        // 打ち出したあと盤面まで届かずに落ちてきた玉は戻り玉（ファウル）
-        if (b.y < CY - 40) b.up = true;
-        if (!b.up && b.life > 0.2 && b.vy > 0 && b.y > CY + 20) { this.stats.out++; continue; }
+        // 盤面の外枠：左は内レール（その上は外レール）、右は外レールの円、その下はまっすぐな枠
+        if (b.x < CX) {
+          if (b.y < RAIL_TOP_Y) ring(R - BALL, false);
+          else if (b.y < LANE_BOTTOM_Y) ring(R_IN - BALL, false);
+        } else if (b.y < RIGHT_WALL_Y) ring(R - BALL, false);
+        else if (b.x > RIGHT_X - BALL) { b.x = RIGHT_X - BALL; b.vx = -Math.abs(b.vx) * 0.4; }
 
         // 液晶の枠
         if (b.x > LCD.x0 - BALL && b.x < LCD.x1 + BALL && b.y > LCD.y0 - BALL && b.y < LCD.y1 + BALL) {
@@ -200,41 +214,11 @@
           else if (m === dl) { b.x = LCD.x0 - BALL; b.vx = -Math.abs(b.vx) * 0.3; }
           else { b.x = LCD.x1 + BALL; b.vx = Math.abs(b.vx) * 0.3; }
         }
-
-        // ステージ上を転がっている玉（行き先は乗った時点で決まる）
-        if (b.stage) {
-          const st = b.stage;
-          const low = st.tier === 2;
-          const yOf = low ? stageLowY : stageUpY;
-          st.t += dt;
-          const k = Math.min(1, st.t / st.dur);
-          const wob = Math.sin(k * Math.PI * st.swings) * (1 - k) * (low ? 24 : 34);
-          const x = st.x0 + (st.x1 - st.x0) * (1 - Math.pow(1 - k, 2)) + wob;
-          b.x = low ? Math.max(73, Math.min(227, x)) : Math.max(45, Math.min(255, x));
-          // 下段に落ちた直後は上段から落ちてくる途中
-          b.y = low && st.t < 0.18 ? st.y0 + (yOf(b.x) - st.y0) * (st.t / 0.18) : yOf(b.x);
-          if (k >= 1) {
-            if (!low && st.out === "center") {
-              const r = this.rng();
-              const out = r < LOW_CENTER ? "center" : r < (1 + LOW_CENTER) / 2 ? "left" : "right";
-              b.stage = { tier: 2, t: 0, dur: 0.8 + this.rng() * 0.6, x0: 150, x1: out === "center" ? 150 : out === "left" ? 71 : 229, swings: 1 + Math.floor(this.rng() * 2), out, y0: b.y };
-            } else {
-              b.stage = null;
-              if (st.out === "center") { b.x = 150 + (this.rng() - 0.5) * 7; b.y = 360; b.vx = 0; b.vy = 30; }
-              else { b.vx = st.out === "left" ? -45 : 45; b.vy = 0; b.y = yOf(b.x) - 1; b.x += st.out === "left" ? -3 : 3; }
-            }
-          }
-          keep.push(b);
-          continue;
-        }
-        // ワープ：入口の前を通った玉の一部が吸い込まれる（1つの玉につき判定は1回）
-        if (!b.warpTried && b.x > WARP.x0 && b.x < WARP.x1 && b.y > WARP.y0 && b.y < WARP.y1 && (b.warpTried = true) && this.rng() < WARP_RATE) {
+        // ワープの入口
+        if (b.x > WARP_IN[0][0] && b.x < WARP_IN[1][0] && b.y > WARP_IN[0][1] && b.y < WARP_IN[1][1]) {
           this.stats.warp = (this.stats.warp || 0) + 1;
-          const r = this.rng();
-          const out = r < UP_CENTER ? "center" : r < (1 + UP_CENTER) / 2 ? "left" : "right";
-          b.stage = { tier: 1, t: 0, dur: 1 + this.rng() * 0.8, x0: WARP.outX, x1: out === "center" ? 150 : out === "left" ? 41 : 259, swings: 1 + Math.floor(this.rng() * 3), out };
           b.warped = true;
-          b.x = WARP.outX; b.y = stageUpY(WARP.outX);
+          b.stage = { t: 0, dur: 1.4 + this.rng() * 0.8, swings: 1 + Math.floor(this.rng() * 3), center: this.rng() < STAGE_CENTER };
           keep.push(b);
           continue;
         }
@@ -249,30 +233,27 @@
             b.y = WINDMILL.y + ny * min;
             const vn = b.vx * nx + b.vy * ny;
             if (vn < 0) { b.vx -= 1.3 * vn * nx; b.vy -= 1.3 * vn * ny; }
-            // 時計回りに回っている羽根が玉を接線方向に押す
             b.vx += -ny * 60 * WINDMILL.spin * dt * 60;
             b.vy += nx * 60 * WINDMILL.spin * dt * 60;
           }
         }
-        // 道釘（線分）とステージ
-        const segs = this.attackerOpen ? RAMPS.concat(STAGE, WALLS) : RAMPS.concat(STAGE, WALLS, [ATTACKER_LID]);
+        // レール・壁（線分）。すり抜け中の玉もレールは通り抜けない（釘のすき間だけ）
         for (const [x1, y1, x2, y2] of segs) {
           const ex = x2 - x1, ey = y2 - y1;
           const t = Math.max(0, Math.min(1, ((b.x - x1) * ex + (b.y - y1) * ey) / (ex * ex + ey * ey)));
           const px = x1 + ex * t, py = y1 + ey * t;
           const dx = b.x - px, dy = b.y - py;
           const d = Math.hypot(dx, dy);
-          if (d < BALL + 1 && d > 1e-6) {
+          if (d < BALL + 0.6 && d > 1e-6) {
             const nx = dx / d, ny = dy / d;
-            b.x = px + nx * (BALL + 1);
-            b.y = py + ny * (BALL + 1);
+            b.x = px + nx * (BALL + 0.6);
+            b.y = py + ny * (BALL + 0.6);
             const vn = b.vx * nx + b.vy * ny;
             if (vn < 0) { b.vx -= 1.25 * vn * nx; b.vy -= 1.25 * vn * ny; }
           }
         }
-
         // 釘
-        for (const p of this.nearPins(b.x, b.y)) {
+        if (!(b.ghost > 0)) for (const p of this.nearPins(b.x, b.y)) {
           const dx = b.x - p[0], dy = b.y - p[1];
           const d2 = dx * dx + dy * dy;
           const min = BALL + PIN;
@@ -285,28 +266,18 @@
             if (vn < 0) {
               b.vx -= 1.45 * vn * nx;
               b.vy -= 1.45 * vn * ny;
-              b.vx += (this.rng() - 0.5) * 14;
+              b.vx += (this.rng() - 0.5) * 12;
             }
           }
         }
-
         // 入賞判定
-        if (!b.kicked && Math.abs(b.x - HESO.x) < HESO.w && b.y > HESO.y - 2 && b.y < HESO.y + 4) {
-          // ヘソ弾き：命釘に当たって外へ弾かれる
-          if (this.rng() > this.accept) {
-            b.kicked = true;
-            b.y = HESO.y - 5;
-            b.vy = -40 - this.rng() * 30;
-            b.vx = (this.rng() < 0.5 ? -1 : 1) * (50 + this.rng() * 40);
-            keep.push(b);
-            continue;
-          }
+        if (Math.abs(b.x - HESO.x) < HESO.w && b.y > HESO.y - 2 && b.y < HESO.y + 4) {
           this.stats.heso++;
           if (b.warped) this.stats.hesoStage = (this.stats.hesoStage || 0) + 1;
           this.handlers.onHeso && this.handlers.onHeso();
           continue;
         }
-        if (this.denchuOpen && Math.abs(b.x - DENCHU.x) < DENCHU.w && b.y > DENCHU.y - 3 && b.y < DENCHU.y + 4) {
+        if (this.denchuOpen && Math.abs(b.x - DENCHU.x) < DENCHU.w && b.y > DENCHU.y - 4 && b.y < DENCHU.y + 4) {
           this.stats.denchu++;
           this.handlers.onDenchu && this.handlers.onDenchu();
           continue;
@@ -323,7 +294,7 @@
           this.handlers.onPocket && this.handlers.onPocket(pocket.pay);
           continue;
         }
-        if (b.y > H + 6) {
+        if (b.y > H + 6 || b.x < -10 || b.x > W + 10) {
           this.stats.out++;
           continue;
         }
@@ -348,26 +319,33 @@
     }
     resize();
     if (root.ResizeObserver) new ResizeObserver(resize).observe(canvas);
+    const line = (segs, color, w) => {
+      g.strokeStyle = color; g.lineWidth = w;
+      for (const [x1, y1, x2, y2] of segs) { g.beginPath(); g.moveTo(x1, y1); g.lineTo(x2, y2); g.stroke(); }
+    };
+    const aR = Math.asin((RIGHT_WALL_Y - CY) / R);            // 右の外枠が直線になる角度
+    const aL = Math.PI - Math.asin((LANE_BOTTOM_Y - CY) / R); // 打ち出しレーンの下端の角度
 
     function draw() {
       g.clearRect(0, 0, W, H);
-      // 盤面
+      // 盤面（外枠の内側）
       const bg = g.createLinearGradient(0, 0, 0, H);
       bg.addColorStop(0, "#2a2150");
       bg.addColorStop(1, "#16112c");
       g.fillStyle = bg;
       g.beginPath();
-      g.arc(CX, CY, R, Math.PI, 0);
-      g.lineTo(W - 4, H);
-      g.lineTo(4, H);
+      g.arc(CX, CY, R, aL, aR + Math.PI * 2, false);
+      g.lineTo(RIGHT_X, H);
+      for (let i = LEFT_EDGE.length - 1; i >= 0; i--) g.lineTo(LEFT_EDGE[i][0], LEFT_EDGE[i][1]);
       g.closePath();
       g.fill();
-      g.strokeStyle = "#f3c252";
-      g.lineWidth = 2;
-      g.beginPath();
-      g.arc(CX, CY, R, Math.PI, 0);
-      g.stroke();
-      // 液晶
+      // 外レールと内レール
+      g.strokeStyle = "#f3c252"; g.lineWidth = 2;
+      g.beginPath(); g.arc(CX, CY, R, aL, aR + Math.PI * 2, false); g.lineTo(RIGHT_X, H); g.stroke();
+      g.strokeStyle = "rgba(243,194,82,.8)"; g.lineWidth = 1.5;
+      g.beginPath(); g.arc(CX, CY, R_IN, Math.PI - Math.asin((LANE_BOTTOM_Y - CY) / R_IN), Math.PI + Math.asin((CY - RAIL_TOP_Y) / R_IN), false); g.stroke();
+      line(segsOf(LEFT_EDGE), "rgba(243,194,82,.8)", 1.5);
+      // 液晶の枠と飾り
       g.fillStyle = "#0d0a1e";
       g.strokeStyle = "#e4412f";
       g.lineWidth = 2;
@@ -375,52 +353,39 @@
       g.roundRect ? g.roundRect(LCD.x0, LCD.y0, LCD.x1 - LCD.x0, LCD.y1 - LCD.y0, 8) : g.rect(LCD.x0, LCD.y0, LCD.x1 - LCD.x0, LCD.y1 - LCD.y0);
       g.fill();
       g.stroke();
-      g.textAlign = "center";
-      // 釘
-      g.fillStyle = "#d8d2ea";
-      for (const p of board.pins) {
-        g.beginPath();
-        g.arc(p[0], p[1], PIN, 0, 7);
-        g.fill();
-      }
-      // ヘソ
-      g.fillStyle = "#e4412f";
-      g.fillRect(HESO.x - 6, HESO.y + 3, 12, 4);
-      g.fillStyle = "#fff";
-      g.font = "8px sans-serif";
-      g.fillText("ヘソ", HESO.x, HESO.y + 15);
-      // 電チュー
-      g.fillStyle = board.denchuOpen ? "#ffd257" : "#7a6a3a";
-      g.fillRect(DENCHU.x - 7, DENCHU.y + 3, 14, 4);
-      if (board.denchuOpen) {
-        g.strokeStyle = "#ffd257";
-        g.beginPath(); g.moveTo(DENCHU.x - 7, DENCHU.y + 3); g.lineTo(DENCHU.x - 12, DENCHU.y - 4); g.moveTo(DENCHU.x + 7, DENCHU.y + 3); g.lineTo(DENCHU.x + 12, DENCHU.y - 4); g.stroke();
-      }
-      g.fillStyle = "#fff";
-      g.fillText("電チュー", DENCHU.x, DENCHU.y + 15);
-      // アタッカー（右通路の途中。閉じているときはフタが通路をふさぐ）
+      g.fillStyle = "#3a2a6a";
+      g.beginPath(); g.moveTo(ROOF[0][0], ROOF[0][1]); g.lineTo(ROOF[0][2], ROOF[0][3]); g.lineTo(ROOF[1][2], ROOF[1][3]); g.closePath(); g.fill();
+      line(ROOF, "#f3c252", 1.5);
+      // ワープの通路（液晶の左）とステージ
+      g.fillStyle = "rgba(140,200,255,.25)";
+      g.beginPath(); g.moveTo(WARP_IN[0][0], WARP_IN[0][1]); g.lineTo(LCD.x0, WARP_IN[1][1]); g.lineTo(LCD.x0, LCD.y1); g.lineTo(FUNNEL[1][2], FUNNEL[1][3]); g.lineTo(FUNNEL[0][2], FUNNEL[0][3]); g.closePath(); g.fill();
+      line(FUNNEL, "#8cc8ff", 1.5);
+      g.fillStyle = "rgba(13,10,30,.85)";
+      g.beginPath(); g.moveTo(LCD.x0, LCD.y1); for (const s of STAGE_WALLS) g.lineTo(s[2], s[3]); g.lineTo(LCD.x1, LCD.y1); g.closePath(); g.fill();
+      line(STAGE_WALLS, "#f3c252", 1.5);
+      line(segsOf(STAGE_PATH), "rgba(243,194,82,.5)", 1);
+      // 右打ちの通路
+      line(RIGHT_WALLS, "#9a8fb5", 2);
+      // アタッカー
       g.fillStyle = board.attackerOpen ? "#ffd257" : "#4a3a5a";
-      g.fillRect(ATTACKER.x0, ATTACKER.y + 2, ATTACKER.x1 - ATTACKER.x0, 6);
-      if (!board.attackerOpen) {
-        g.strokeStyle = "#8a7aa0"; g.lineWidth = 2;
-        g.beginPath(); g.moveTo(ATTACKER_LID[0], ATTACKER_LID[1]); g.lineTo(ATTACKER_LID[2], ATTACKER_LID[3]); g.stroke();
-      }
-      g.fillStyle = "#fff";
-      g.save(); g.translate(ATTACKER.x1 + 1, ATTACKER.y + 12); g.font = "7px sans-serif"; g.textAlign = "right"; g.fillText("アタッカー", 0, 0); g.restore();
-      // 右通路のレール
-      g.strokeStyle = "#f3c252"; g.lineWidth = 2;
-      for (const [x1, y1, x2, y2] of WALLS) { g.beginPath(); g.moveTo(x1, y1); g.lineTo(x2, y2); g.stroke(); }
-      // 内レール
-      g.strokeStyle = "rgba(243,194,82,.7)";
-      g.lineWidth = 1.5;
-      g.beginPath(); g.moveTo(INNER_RAIL.x, INNER_RAIL.y0); g.lineTo(INNER_RAIL.x, INNER_RAIL.y1); g.stroke();
-      // ステージ
-      g.strokeStyle = "#f3c252";
-      g.lineWidth = 2;
-      for (const [x1, y1, x2, y2] of STAGE) { g.beginPath(); g.moveTo(x1, y1); g.lineTo(x2, y2); g.stroke(); }
-      // ワープ入口
-      g.fillStyle = "#9a5ef0";
-      g.fillRect(WARP.x0, WARP.y0, WARP.x1 - WARP.x0, WARP.y1 - WARP.y0);
+      g.fillRect(ATTACKER.x0, ATTACKER.y + 1, ATTACKER.x1 - ATTACKER.x0, 5);
+      if (!board.attackerOpen) line([ATTACKER_LID], "#ff5a5a", 2);
+      g.fillStyle = "#fff"; g.font = "6px sans-serif"; g.textAlign = "center";
+      g.fillText("アタッカー", (ATTACKER.x0 + ATTACKER.x1) / 2, ATTACKER.y + 13);
+      // 電チュー
+      line([DENCHU_SLIDE], "#c9b97a", 2);
+      g.fillStyle = board.denchuOpen ? "#ffd257" : "#7a6a3a";
+      g.fillRect(DENCHU.x - 5, DENCHU.y + 2, 10, 3);
+      if (!board.denchuOpen) line([DENCHU_LID], "#ffd257", 1.5);
+      g.fillStyle = "#fff"; g.fillText("電チュー", DENCHU.x + 10, DENCHU.y - 6);
+      // ヘソとハカマ
+      line(board.hakama, "#e4412f", 1.5);
+      g.fillStyle = "#e4412f";
+      g.fillRect(HESO.x - 4, HESO.y + 2, 8, 3);
+      g.fillStyle = "#fff"; g.fillText("ヘソ", HESO.x, HESO.y + 12);
+      // 一般入賞口
+      g.fillStyle = "#4fd88f";
+      for (const pk of POCKETS) g.fillRect(pk.x - 4, pk.y + 2, 8, 2.5);
       // 風車
       g.save();
       g.translate(WINDMILL.x, WINDMILL.y);
@@ -428,19 +393,13 @@
       g.fillStyle = "#e4412f";
       for (let i = 0; i < 4; i++) { g.rotate(Math.PI / 2); g.fillRect(-1, 0, 2, WINDMILL.r + 1); }
       g.restore();
-      // 道釘
+      // 釘
       g.fillStyle = "#d8d2ea";
-      for (const [x1, y1, x2, y2] of RAMPS) {
-        const n = Math.ceil(Math.hypot(x2 - x1, y2 - y1) / 4);
-        for (let i = 0; i <= n; i++) {
-          g.beginPath();
-          g.arc(x1 + ((x2 - x1) * i) / n, y1 + ((y2 - y1) * i) / n, PIN, 0, 7);
-          g.fill();
-        }
+      for (const p of board.pins) {
+        g.beginPath();
+        g.arc(p[0], p[1], 1.25, 0, 7);
+        g.fill();
       }
-      // 一般入賞口
-      g.fillStyle = "#4fd88f";
-      for (const pk of POCKETS) g.fillRect(pk.x - 5, pk.y + 3, 10, 3);
       // 玉
       for (const b of board.balls) {
         const grd = g.createRadialGradient(b.x - 1, b.y - 1, 0.5, b.x, b.y, BALL);
@@ -448,7 +407,7 @@
         grd.addColorStop(1, "#8d93a8");
         g.fillStyle = grd;
         g.beginPath();
-        g.arc(b.x, b.y, BALL * 1.2, 0, 7);
+        g.arc(b.x, b.y, BALL, 0, 7);
         g.fill();
       }
     }
