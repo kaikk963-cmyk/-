@@ -153,6 +153,21 @@
         result = FORCED[force.kind]();
         if (rush && result.kind !== "miss") result = { kind: "hit", rush: true, big: rng() < S.rush6000Rate };
       }
+      // 役物投下ボタン：変動中の陰陽玉落下（実機の手落下）を1回起こし、その信頼度どおりに当否を決め直す
+      // （通常音 約72%、低音・高音は大当り濃厚。RUSH中は落下すれば大当り）
+      let forcedDrop = null;
+      if (force && force.drop) {
+        if (rush) {
+          result = { kind: "hit", rush: true, big: rng() < S.rush6000Rate };
+          forcedDrop = { sound: "high", info: { group: "役物投下ボタン（RUSH中）", label: "陰陽玉落下", rel: 1 } };
+        } else {
+          const g = D.NORMAL_YOKOKU.find((x) => x.id === "hand");
+          let r = rng() * g.options.reduce((a, o) => a + o.share, 0);
+          const o = g.options.find((x) => (r -= x.share) < 0) || g.options[0];
+          result = rng() < o.rel ? { kind: "hit", rush: rng() < S.hitRushRate } : { kind: "miss", rush: false };
+          forcedDrop = { sound: o.sound, info: { group: "役物投下ボタン", label: o.label, rel: o.rel } };
+        }
+      }
       // 先バレの強制：先に出す先バレを決めて、その信頼度どおりに当否を決め直す（EXなら必ず大当り）
       let forcedSen = null;
       if (!rush && force && force.senbare) {
@@ -209,6 +224,7 @@
       }
 
       if (rush && custom.rushMode === "shurai" && out.hit && rng() < 0.6) hold.notice = true;
+      if (forcedDrop) hold.forcedDrop = forcedDrop;
       return hold;
     }
 
@@ -451,7 +467,7 @@
           case "tokitome": steps.push({ t: "tokitome", color: o.color, info: i }); break;
           case "mono": steps.push({ t: "mono", color: o.color, info: i }); break;
           case "haikei": steps.push({ t: "bg", bg: o.bg, info: i }); break;
-          case "hand": steps.push({ t: "hand", sound: o.sound, info: i }); break;
+          case "hand": if (!hold.forcedDrop) steps.push({ t: "hand", sound: o.sound, info: i }); break;
           case "bunbun": steps.push({ t: "bunbun", color: o.color, headline: o.headline, info: i }); break;
           case "saisen": steps.push({ t: "saisen", item: o.item, color: o.color, line: choice(L.saisen[o.item]), info: i }); break;
           case "hud": steps.push({ t: "hud", word: o.word, color: o.color, info: i }); break;
@@ -469,7 +485,7 @@
 
       let reach = pick(D.NORMAL_REACH, out, P.spin, S.hitRushRate);
       // 先バレした保留は、ハズレでも必ずリーチまでは発展する（実機と同じく先バレからの素ハズレはない）
-      if (!reach && hold.senbare && !out.hit) reach = pickMissReach();
+      if (!reach && (hold.senbare || hold.forcedDrop) && !out.hit) reach = pickMissReach();
 
       if (reach) {
         for (const g of D.NORMAL_PRE_REACH) {

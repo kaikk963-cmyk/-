@@ -374,7 +374,7 @@
       state.chainBalls += got;
       state.stLeft = S.stSpins;
       state.maxChain = Math.max(state.maxChain, state.chain);
-      addHistory({ type: "rush", label: `弾幕RUSH ${state.chain}連目${hold.result.big ? `（${S.labels.big}）` : ""}`, balls: got, at: used });
+      addHistory({ type: "rush", label: `弾幕RUSH ${state.chain}連目${hold.result.big ? `（${S.labels.big}）` : ""}${hold.forcedDrop ? "（役物投下）" : ""}`, balls: got, at: used });
     } else if (state.stLeft <= 0) {
       await endRush();
     }
@@ -394,7 +394,8 @@
     const at = state.sinceBonus;
     state.sinceBonus = 0;
     const got = await runBonus(engine.bonusSteps(hold.result, digits, "normal", state.custom));
-    addHistory({ type: hold.result.rush ? "rush" : "bonus", label: hold.result.rush ? "異変解決BONUS → 弾幕RUSH" : "異変解決BONUS（RUSH非突入）", balls: got, at });
+    const tag = hold.forcedDrop ? "（役物投下）" : "";
+    addHistory({ type: hold.result.rush ? "rush" : "bonus", label: (hold.result.rush ? "異変解決BONUS → 弾幕RUSH" : "異変解決BONUS（RUSH非突入）") + tag, balls: got, at });
     if (hold.result.rush) enterRush(got);
     else stage.setMode("normal");
   }
@@ -422,26 +423,26 @@
     render();
   }
 
-  // 役物投下ボタン：陰陽玉が落ちたら大当り。次に回る保留（なければ次の入賞）を大当りにする
-  let yakuPending = null;
+  // 役物投下ボタン：いま陰陽玉を落とす。実機の手落下と同じく確定ではなく、
+  // 次に回る保留（なければ次の入賞）の当否を、落下の信頼度（通常音 約72%・低音/高音は濃厚）で決め直す
+  let yakuPending = false;
   function yakumonoDrop() {
     window.Sound.unlock();
-    stage.drop("normal", false, "yakumono");
     const rush = state.mode === "rush";
     const list = rush ? state.rushHolds : state.holds;
-    const kind = rush ? "rushHit" : Math.random() < S.hitRushRate ? "rushHit" : "hit";
-    if (list.length && !list[0].yaku) {
-      const h = engine.makeHold(rush ? "rush" : "normal", state.custom, { kind });
-      h.yaku = true;
-      h.color = "gold";
-      h.shown = "gold";
-      h.reveal = "entry";
+    if (list.length && list[0].forcedDrop) return; // 次の変動にはもう落ちている
+    let h = null;
+    if (list.length) {
+      h = engine.makeHold(rush ? "rush" : "normal", state.custom, { drop: true });
+      h.shown = list[0].shown;
       list[0] = h;
       renderHolds();
-    } else if (!list.length) {
-      yakuPending = kind;
+    } else {
+      yakuPending = true;
     }
-    showToast(list.length ? "次の変動で大当り！" : "次の入賞で大当り！");
+    stage.drop(h && h.forcedDrop.sound === "high" ? "high" : h && h.forcedDrop.sound === "low" ? "low" : "normal", false, "yakumono");
+    if (h) onLog(h.forcedDrop.info);
+    showToast(list.length ? "役物落下！次の変動に注目" : "役物落下！次の入賞に注目");
     save();
   }
 
@@ -701,9 +702,8 @@
   // 次に入賞する保留の結果・先バレを固定する（1回だけ、先バレは毎回も可）
   function takeForce(mode) {
     if (yakuPending) {
-      const k = mode === "rush" ? "rushHit" : yakuPending;
-      yakuPending = null;
-      return { kind: k, senbare: false, yaku: true };
+      yakuPending = false;
+      return { kind: null, senbare: false, drop: true };
     }
     const kind = state.dev.force !== "none" ? state.dev.force : null;
     const senbare = mode === "normal" && state.dev.senbare !== "off";
@@ -743,7 +743,7 @@
     body += field("陰陽玉を今すぐ落とす", "役物を落とす演出だけを出す。抽選結果には関係しない。当たりにしたいときは「次の入賞を固定」と組み合わせる。音の差し替えは「サウンド」タブ。",
       `<div class="drop-btns"><button type="button" data-drop="normal">通常音</button><button type="button" data-drop="low">低音</button><button type="button" data-drop="high">高音</button><button type="button" data-drop="weak">弱落下</button></div>`);
     body += field("RUSHを強制終了", "弾幕RUSH中に押すと、今の変動（とBONUS）が終わったところでRUSHを終える。", `<button type="button" class="btn-danger" data-endrush ${state.mode === "rush" ? "" : "disabled"}>${state.mode === "rush" ? "RUSHを今すぐ終わらせる" : "RUSH中だけ押せます"}</button>`);
-    body += field("メイン画面に役物投下ボタン", "PUSHとレバーの横に「役物投下」ボタンと、RUSH中は「RUSH終了」ボタンを出す（初期ON）。役物投下を押すと陰陽玉が落ちて、次の変動（保留がなければ次の入賞）が大当りになる。", seg("dev.dropBtn", { off: "OFF", on: "ON" }, state.dev.dropBtn));
+    body += field("メイン画面に役物投下ボタン", "PUSHとレバーの横に「役物投下」ボタンと、RUSH中は「RUSH終了」ボタンを出す（初期ON）。役物投下を押すと陰陽玉が落ちて、次の変動（保留がなければ次の入賞）の当否が実機の手落下と同じ信頼度（通常音 約72%・低音/高音は濃厚・RUSH中は大当り）で決まる。ボタンで出た大当りは履歴に「（役物投下）」と付く。", seg("dev.dropBtn", { off: "OFF", on: "ON" }, state.dev.dropBtn));
     for (const d of devGroups()) {
       const changed = d.group.options.some((o) => state.dev.overrides[devKey(d, o)]);
       const rows = d.group.options.map((o) => {
