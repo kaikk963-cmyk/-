@@ -8,7 +8,7 @@
   const fmt = (n) => Math.round(n).toLocaleString("ja-JP");
 
   const DEFAULT_CUSTOM = { senbare: "s40", sakiyomi: "osusume", leverBuru: "off", impact: "off", rushMode: "default", challenge: "koumakan", chargeMode: "toppa" };
-  const DEFAULT_SETTINGS = { boardV: 8, board: "on", shot: "left", autoShot: "on", leftStrength: 45, rightStrength: 90, hesoOpen: 2.25, rate: 18, speed: "real", autoPush: "off", sound: "on", bgm: "off", volume: 0.7, vibe: "on", showRel: "on", presetYakumono: "std", presetSenbare: "std", spec: "middle", tomeuchi: "on" };
+  const DEFAULT_SETTINGS = { boardV: 9, board: "on", shot: "left", autoShot: "on", leftStrength: 40, rightStrength: 90, hesoOpen: 2.25, rate: 18, speed: "real", autoPush: "off", sound: "on", bgm: "off", volume: 0.7, vibe: "on", showRel: "on", presetYakumono: "std", presetSenbare: "std", spec: "middle", tomeuchi: "on" };
   const SPEEDS = { real: 1, slow: 1.35, normal: 1, fast: 0.5, turbo: 0.2 };
   const SPEED_LABEL = { real: "実機", normal: "標準", fast: "高速", turbo: "爆速" };
   const DEFAULT_DEV = { overrides: {}, force: "none", senbare: "off", rush6000: null, dropBtn: "on" };
@@ -804,7 +804,7 @@
     const big = state.dev.rush6000 ?? devDefaults.rush6000;
     body += field("ハンドルの強さ（物理盤面）", "左打ち・右打ちを選んだときの打ち出しの強さ（0〜100）。左打ちは35〜55あたりで、玉が盤面の上まで上がってから左側に落ちる。",
       `<div class="drop-btns" style="grid-template-columns:auto 1fr auto 1fr;align-items:center">左<input class="num-in" type="number" min="0" max="100" step="1" data-strength="leftStrength" value="${state.settings.leftStrength}" aria-label="左打ちの強さ">右<input class="num-in" type="number" min="0" max="100" step="1" data-strength="rightStrength" value="${state.settings.rightStrength}" aria-label="右打ちの強さ"></div>`);
-    body += field("ヘソ釘の開き（物理盤面）", "大きいほどヘソで弾かれにくく、よく回る。標準は2.25（約20回転/1000円）。", `<input id="hesoRange" class="range" type="range" min="0.5" max="2.5" step="0.25" value="${state.settings.hesoOpen}">`, `<b id="hesoVal">${state.settings.hesoOpen}</b>`);
+    body += field("ヘソ釘の開き（物理盤面）", "大きいほど命釘に弾かれにくく、よく回る。標準は2.25（約20回転/1000円）。0.5が図と同じ命釘の位置。", `<input id="hesoRange" class="range" type="range" min="0.5" max="2.5" step="0.25" value="${state.settings.hesoOpen}">`, `<b id="hesoVal">${state.settings.hesoOpen}</b>`);
     body += field(`夢想封印MAX（${S.labels.big}）の割合`, `RUSH中の大当りのうち、BONUS中に陰陽玉が落ちて${S.labels.big}になる割合（スペックごとの標準は${Math.round(devDefaults.rush6000 * 100)}%）。`,
       `<input class="num-in wide" type="number" inputmode="decimal" min="0" max="100" step="0.5" data-dev="rush6000" value="${+(big * 100).toFixed(2)}" aria-label="6000発の割合（%）">`, `<b>${+(big * 100).toFixed(1)}%</b>`);
     body += `<div class="field"><button type="button" class="btn-danger" id="devReset">すべて元の値に戻す</button></div>`;
