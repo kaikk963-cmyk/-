@@ -8,7 +8,7 @@
   const fmt = (n) => Math.round(n).toLocaleString("ja-JP");
 
   const DEFAULT_CUSTOM = { senbare: "s40", sakiyomi: "osusume", leverBuru: "off", impact: "off", rushMode: "default", challenge: "koumakan", chargeMode: "toppa" };
-  const DEFAULT_SETTINGS = { boardV: 8, board: "on", shot: "left", autoShot: "on", leftStrength: 45, rightStrength: 90, hesoOpen: 2.25, rate: 18, speed: "real", autoPush: "off", sound: "on", bgm: "off", volume: 0.7, vibe: "on", showRel: "on", presetYakumono: "std", presetSenbare: "std", spec: "middle" };
+  const DEFAULT_SETTINGS = { boardV: 8, board: "on", shot: "left", autoShot: "on", leftStrength: 45, rightStrength: 90, hesoOpen: 2.25, rate: 18, speed: "real", autoPush: "off", sound: "on", bgm: "off", volume: 0.7, vibe: "on", showRel: "on", presetYakumono: "std", presetSenbare: "std", spec: "middle", tomeuchi: "on" };
   const SPEEDS = { real: 1, slow: 1.35, normal: 1, fast: 0.5, turbo: 0.2 };
   const SPEED_LABEL = { real: "実機", normal: "標準", fast: "高速", turbo: "爆速" };
   const DEFAULT_DEV = { overrides: {}, force: "none", senbare: "off", rush6000: null, dropBtn: "on" };
@@ -171,6 +171,7 @@
   const useBoard = () => state.settings.board === "on";
   let board = null;
   let boardView = null;
+  let tomeuchi = false; // 止め打ち中（保留満タンで打ち出しを止めている）
   let entryWaiters = [];
 
   function entryArrived() {
@@ -239,9 +240,13 @@
       last = t;
       try {
       // 盤面は常に描く（物理演算OFFのときは玉を打たない）
-      board.firing = useBoard() && handleOn && !state.completed;
+      // 止め打ち：保留が満タンのあいだは打ち出しを止める（オーバー入賞で玉をむだにしない。BONUS中は止めない）
+      const full = !inBonus && (state.mode === "rush" ? state.rushHolds.length : state.holds.length) >= S.holdMax;
+      tomeuchi = useBoard() && handleOn && full && state.settings.tomeuchi === "on";
+      board.firing = useBoard() && handleOn && !state.completed && !tomeuchi;
       board.mode = inBonus ? "bonus" : state.mode;
-      board.step(dt / speedFactor());
+      // 演出スピードを上げても、盤面（玉の動きと打ち出し）は最大2.5倍まで。速すぎると保留が追いつかずオーバー入賞ばかりになる
+      board.step(dt * Math.min(2.5, 1 / speedFactor()));
       boardView.draw();
       if (useBoard()) renderShotHint();
       } catch (e) {
@@ -288,7 +293,7 @@
     // 自動打ち分け：RUSH・BONUS中は右打ち、通常時は左打ちに切り替える
     if (state.settings.autoShot === "on" && (state.settings.shot === "right") !== needRight) setShot(needRight ? "right" : "left");
     const right = state.settings.shot === "right";
-    const text = needRight && !right ? "右打ちしてください ▶" : !needRight && right && handleOn ? "◀ 通常時は左打ち" : "";
+    const text = needRight && !right ? "右打ちしてください ▶" : !needRight && right && handleOn ? "◀ 通常時は左打ち" : tomeuchi ? "保留満タン・止め打ち中" : "";
     if (text !== lastHint) {
       lastHint = text;
       $("shotHint").textContent = text;
@@ -1102,7 +1107,8 @@
       body = field("玉の物理演算（盤面）", "ONにすると、盤面に玉を打って、ヘソに入った玉だけが回転になる。ハンドルの強さで回り方が変わる。OFFにすると下の回転率どおりに回る。", seg("settings.board", { on: "ON", off: "OFF" }, st.board));
       body += field("回転率（1000円あたり）", `ヘソへの入賞しやすさ。いまのスペック（${S.label}）の等価ボーダーは約${border().toFixed(1)}回転。保留が満タンのときの入賞は無駄になるので、実測はこれより少し下がる。`,
         `<input id="rateRange" class="range" type="range" min="12" max="26" step="0.5" value="${st.rate}">`, `<b id="rateVal">${st.rate}回転</b>`).replace("ヘソへの入賞しやすさ。", "物理盤面がOFFのときのヘソへの入賞しやすさ。");
-      body += field("演出スピード", "「実機」は実際の台に近い時間で動く。保留が少ないとハズレ変動は約7秒、保留3個以上で約2.5秒に短縮。大当りはアタッカーに10個入るごとに1ラウンドが終わる。", seg("settings.speed", SPEED_LABEL, st.speed));
+      body += field("演出スピード", "「実機」は実際の台に近い時間で動く。保留が少ないとハズレ変動は約7秒、保留3個以上で約2.5秒に短縮。大当りはアタッカーに10個入るごとに1ラウンドが終わる。速くしても、物理盤面の玉の動きと打ち出しは最大2.5倍まで。", seg("settings.speed", SPEED_LABEL, st.speed));
+      body += field("止め打ち", "ONにすると、保留が4個たまっているあいだは打ち出しを自動で止める（実機の止め打ちと同じ）。保留満タンのときにヘソに入った玉は回転にならないので、玉のむだを減らせる。BONUS中は止めない。", seg("settings.tomeuchi", { on: "ON", off: "OFF" }, st.tomeuchi));
       body += field("自動PUSH", "ONにすると、PUSHや八卦炉レバーの指示をすぐ自動で消化する。OFFでも数秒待てば自動で進む。", seg("settings.autoPush", { off: "OFF", on: "ON" }, st.autoPush));
       body += field("サウンド", "", seg("settings.sound", { on: "ON", off: "OFF" }, st.sound));
       body += field("BGM", "オリジナルの短いループ曲", seg("settings.bgm", { on: "ON", off: "OFF" }, st.bgm));
