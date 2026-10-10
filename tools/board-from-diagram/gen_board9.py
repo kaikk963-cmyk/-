@@ -148,6 +148,39 @@ SPILL = []
 for sx in list(range(290, 521, 25)) + list(range(600, 641, 20)):
     col = np.where(region[880:1100, sx])[0]
     if len(col): SPILL.append([round((sx - 79) * 300 / 949, 2), round((880 + col[0] + 11 - 158) * 300 / 949, 2)])
+# 飾りの線（ワープの通路・ワープ出口の筒・ステージの線）と、水色の部品。壁ではなく、描くだけ。
+# 液晶の窓の中・上の飾り（文字の入った帯）・左の飾りパネル（文字入り）は描かない
+TB = lambda x, y: [round((x - 79) * 300 / 949, 2), round((y - 158) * 300 / 949, 2)]
+ink = (img_nails.astype(int).min(2) < 205).astype(np.uint8)
+deco_area = np.zeros_like(ink)
+deco_area[395:862, 230:300] = 1          # ワープの通路
+deco_area[740:1075, 205:880] = 1         # ワープ出口の筒とステージ
+deco_area[410:860, 300:850] = 0          # 液晶の窓
+ink &= deco_area
+def lines_of(mask):
+    out = []
+    for c in cv2.findContours(mask, cv2.RETR_LIST, cv2.CHAIN_APPROX_NONE)[0]:
+        if cv2.arcLength(c, True) < 25: continue
+        a = cv2.approxPolyDP(c, 0.8, True)[:, 0, :]
+        out.append([v for x, y in a for v in TB(float(x), float(y))])
+    return out
+# 壁でない部分の線（液晶の下の線・ワープ出口の筒など）は盤面に、通れる部分の中を横切る線（ステージの手前のふち）は玉の上に重ねて描く
+DECO = lines_of(ink & (cv2.dilate(region, np.ones((5, 5), np.uint8)) == 0).astype(np.uint8))
+ink2 = (img.astype(int).min(2) < 205).astype(np.uint8)          # 釘を消した図
+over_area = np.zeros_like(ink2)
+cv2.fillPoly(over_area, [np.array([(222, 880), (660, 880), (660, 1064), (540, 1064), (470, 1046), (300, 988), (222, 950)], np.int32)], 1)
+DECO_OVER = lines_of(ink2 & over_area & cv2.erode(region | ink2, np.ones((5, 5), np.uint8)))
+fb = img_nails.astype(int)
+blue = ((fb[..., 0] > 225) & (fb[..., 0] - fb[..., 2] > 12) & (fb[..., 2] < 245)).astype(np.uint8)
+blue &= np.pad(np.ones((462, 115), np.uint8), ((395, H_ - 857), (225, W_ - 340)))
+blue = cv2.morphologyEx(blue, cv2.MORPH_OPEN, np.ones((3, 3), np.uint8))
+BLUE = []
+for c in cv2.findContours(blue, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)[0]:
+    if cv2.contourArea(c) < 60: continue
+    a = cv2.approxPolyDP(c, 0.8, True)[:, 0, :]
+    BLUE.append([v for x, y in a for v in TB(float(x), float(y))])
+print("deco", len(DECO), "over", len(DECO_OVER), "blue", len(BLUE))
+
 # 液晶の窓が通れる部分にかかっていないか
 lcd = region[410:860, 300:850]
 print("LCD overlaps playable px:", int(lcd.sum()))
@@ -200,7 +233,11 @@ G = {
     # ワープ入口：液晶の枠の左上（図の水色の通路の入口）。枠にそって落ちてきた玉が入る
     "WARP_IN": [T(234, 398), T(254, 418)],
     # ステージ：ワープの出口から液晶の下の枠の上を転がって中央へ。中央から落ちた玉はヘソの真上に出る
-    "STAGE_PATH": [T(244, 860), T(330, 905), T(430, 950), T(520, 1000), T(566, 1036)], "STAGE_EXIT": T(557.5, 1066),
+    # ワープの通り道：入口 → 液晶の左の水色の通路 → ワープ出口の筒 → ステージの左はし
+    "WARP_PATH": [T(244, 410), T(259, 428), T(258, 500), T(253, 600), T(247, 700), T(240, 752), T(226, 790), T(240, 815), T(250, 840), T(254, 862)],
+    # ステージ：ステージの床の線の上（玉の半径ぶん上）を転がって、中央の穴へ。穴から落ちた玉はヘソの真上に出る
+    "STAGE_PATH": [T(254, 862), T(300, 897), T(400, 949), T(480, 993), T(520, 1015), T(545, 1025), T(560, 1036)], "STAGE_EXIT": T(558, 1056),
+    "DECO": DECO, "DECO_OVER": DECO_OVER, "BLUE": BLUE,
     "SPILL": SPILL,
     "LCD": dict(zip(["x0", "y0"], T(300, 410))) | dict(zip(["x1", "y1"], T(850, 860))),
 }
