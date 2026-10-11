@@ -47,6 +47,26 @@
   const RAIL_FRICTION = 0.55;
   const PIN_E = 1.45, PIN_KICK = 12, WALL_E = 1.25; // 釘・壁の跳ね返り（1＋はね返り係数）と、釘に当たったときのばらつき
 
+  // 玉は回転する鋼球として扱う（半径 BALL、慣性モーメント 2/5 m r^2）。b.w は回転の速さ（rad/s、盤面に垂直な軸）。
+  // 接触：法線方向ははね返り、接線方向は摩擦で「すべり」を止めようとする力が働き、速さと回転がやり取りされる。
+  // そのため玉はレールや道釘の上を転がり（坂では重力の5/7で加速）、回転していると釘に当たったときの跳ね方が変わる
+  const MU_WALL = 0.05, MU_PIN = 0.2; // 摩擦係数（壁・レール／釘）
+  const SPIN_DECAY = 0.8;            // 空中で回転が弱まる速さ（ガラス・盤面との接触）
+  function contact(b, nx, ny, e, mu) {
+    const vn = b.vx * nx + b.vy * ny;   // n は接触面から玉の中心へ向く単位ベクトル
+    if (vn >= 0) return false;
+    const jn = -e * vn;
+    b.vx += jn * nx; b.vy += jn * ny;
+    const tx = -ny, ty = nx;
+    const slip = b.vx * tx + b.vy * ty - (b.w || 0) * BALL; // 接点のすべりの速さ
+    let jt = -slip * 2 / 7;                          // すべりがちょうど止まる大きさ
+    const lim = mu * jn;
+    if (jt > lim) jt = lim; else if (jt < -lim) jt = -lim;
+    b.vx += jt * tx; b.vy += jt * ty;
+    b.w = (b.w || 0) - 2.5 * jt / BALL;
+    return true;
+  }
+
   // 壁：境界線の各辺。底の線と、レーンの出口をふさぐ線は除く
   const WALLS = [];
   for (const [k, p] of POLYS.entries()) {
@@ -145,7 +165,7 @@
   // 2本の間を抜けた玉だけがハカマの中を落ちてヘソに入る（入ったように見えて弾かれる、ということはない）
   const inochiHalf = (open) => 4.27 + (open - 0.5) * 0.12; // 0.5で図の命釘の位置
   // 命釘の間に来た玉が、命釘に弾かれずに抜ける割合（実機の玉は勢いがあるので、すき間に来ても多くは命釘に弾かれる）
-  const inochiPass = (open) => Math.max(0.02, 0.15 + (open - 0.5) * 0.33); // 標準の2.25で約73%（1000円で約19回転）
+  const inochiPass = (open) => Math.max(0.02, 0.1 + (open - 0.5) * 0.22); // 標準の2.25で約49%（1000円で約19回転）
 
   // 外レールのすぐ内側の釘（左上の入口の1本）は、図では線の太さのぶん外レールに寄って描かれていて、
   // そのままだと右打ちの玉がレールと釘のすき間を通れない。当たり判定だけ玉1個ぶん通れる位置まで内側に寄せる（見た目は図の位置）
@@ -209,7 +229,7 @@
       // 打ち出しレーンの下から、外レールにそって上へ。ハンドルの強さで速さが決まる（ばらつきあり）
       const v = 310 + this.strength * 3.0 + (this.rng() - 0.5) * 40;
       const p = lanePos(0);
-      this.balls.push({ x: p.x, y: p.y, vx: 0, vy: 0, life: 0, lane: true, s: 0, v });
+      this.balls.push({ x: p.x, y: p.y, vx: 0, vy: 0, w: 0, a: 0, life: 0, lane: true, s: 0, v });
     }
     step(dt) {
       if (this.firing) {
@@ -250,12 +270,9 @@
         b.x = px + nx * R;
         b.y = py + ny * R;
         const vn = b.vx * nx + b.vy * ny;
-        if (vn < 0) {
-          // かすめるように当たった玉は跳ねずに壁にそって滑る（外レールにそって飛ぶ玉がレールから離れない）
-          const graze = vn > -60 || vn * vn < 0.06 * (b.vx * b.vx + b.vy * b.vy); // 浅い角度（約14度まで）
-          const e = graze ? 1 : WALL_E;
-          b.vx -= e * vn * nx; b.vy -= e * vn * ny;
-        }
+        // かすめるように当たった玉は跳ねずに壁にそって転がる（外レールにそって飛ぶ玉がレールから離れない）
+        const graze = vn > -60 || vn * vn < 0.06 * (b.vx * b.vx + b.vy * b.vy); // 浅い角度（約14度まで）
+        contact(b, nx, ny, graze ? 1 : WALL_E, MU_WALL);
       }
     }
     sub(dt) {
@@ -273,7 +290,7 @@
           if (b.s <= 0 && b.v < 0) { this.stats.foul = (this.stats.foul || 0) + 1; this.handlers.onFoul && this.handlers.onFoul(); continue; } // ファール球は上皿に戻る
           const q = lanePos(Math.max(0, b.s));
           b.x = q.x; b.y = q.y;
-          if (b.s >= LANE_L) { b.lane = false; b.vx = q.tx * b.v; b.vy = q.ty * b.v; }
+          if (b.s >= LANE_L) { b.lane = false; b.vx = q.tx * b.v; b.vy = q.ty * b.v; b.w = -b.v / BALL; } // 外レールの上を転がりながら出る
           keep.push(b);
           continue;
         }
@@ -296,11 +313,11 @@
           b.y = p[1] - BALL - 0.5;
           if (k >= 1) {
             b.stage = null;
-            if (st.center) { b.x = STAGE_EXIT[0] + (this.rng() - 0.5) * 3; b.y = STAGE_EXIT[1]; b.vx = 0; b.vy = 30; }
+            if (st.center) { b.x = STAGE_EXIT[0] + (this.rng() - 0.5) * 3; b.y = STAGE_EXIT[1]; b.vx = 0; b.vy = 30; b.w = 0; }
             else {
               // ステージの手前にこぼれて、下の道釘のほうへ落ちる
               const p = SPILL[Math.floor(this.rng() * SPILL.length)];
-              b.x = p[0] + (this.rng() - 0.5) * 3; b.y = p[1]; b.vx = (this.rng() - 0.5) * 20; b.vy = 10;
+              b.x = p[0] + (this.rng() - 0.5) * 3; b.y = p[1]; b.vx = (this.rng() - 0.5) * 20; b.vy = 10; b.w = 0;
             }
           }
           keep.push(b);
@@ -313,8 +330,15 @@
           if (b.slow > 0.4) { b.vx = (this.rng() < 0.5 ? -1 : 1) * (20 + this.rng() * 25); b.vy = -12; b.slow = 0; }
         } else b.slow = 0;
         if (b.ax === undefined || Math.hypot(b.x - b.ax, b.y - b.ay) > 2) { b.ax = b.x; b.ay = b.y; b.at = 0; }
-        else if ((b.at += dt) > 0.8) { b.ghost = 0.25; b.at = 0; b.vx *= 0.3; b.vy = 30; }
+        else if ((b.at += dt) > 0.8) {
+          b.at = 0;
+          // 命釘の上で止まった玉は、横に転がり落ちる（命釘の間はすり抜けない）
+          if (b.gate && !b.gatePass) { b.vx = (b.x < b.gate.x ? -1 : 1) * 45; b.vy = -15; }
+          else { b.ghost = 0.25; b.vx *= 0.3; b.vy = 30; }
+        }
         if (b.ghost > 0) b.ghost -= dt;
+        b.w = (b.w || 0) * Math.exp(-SPIN_DECAY * dt);
+        b.a = (b.a || 0) + b.w * dt; // 描画用の回転角
         b.vy += G * dt;
         b.x += b.vx * dt;
         b.y += b.vy * dt;
@@ -325,8 +349,7 @@
           if (d > lim) {
             const nx = dx / d, ny = dy / d;
             b.x = TOP_ARC.x + nx * lim; b.y = TOP_ARC.y + ny * lim;
-            const vn = b.vx * nx + b.vy * ny;
-            if (vn > 0) { b.vx -= vn * nx; b.vy -= vn * ny; }
+            contact(b, -nx, -ny, 1, MU_WALL);
           }
         }
         // 外レールにそって戻ってきた玉は、内レールの上端の戻り玉防止弁に当たって盤面側へ落ちる（レーンには戻らない）
@@ -354,8 +377,7 @@
             const hub = 1.2 + BALL;
             if (d < hub) {
               b.x = WINDMILL.x + nx * hub; b.y = WINDMILL.y + ny * hub;
-              const vn = b.vx * nx + b.vy * ny;
-              if (vn < 0) { b.vx -= 1.3 * vn * nx; b.vy -= 1.3 * vn * ny; }
+              contact(b, nx, ny, 1.3, MU_PIN);
             }
             // 羽根の速さ（接線方向）に近づける
             const tx = -ny, ty = nx;
@@ -378,8 +400,7 @@
               if (d < min) {
                 const nx = d > 1e-5 ? dx / d : (this.rng() < 0.5 ? -1 : 1), ny = d > 1e-5 ? dy / d : 0;
                 b.x = gt.x + nx * min; b.y = gt.y + ny * min;
-                const vn = b.vx * nx + b.vy * ny;
-                if (vn < 0) { b.vx -= PIN_E * vn * nx; b.vy -= PIN_E * vn * ny; b.vx += (this.rng() - 0.5) * PIN_KICK; }
+                if (contact(b, nx, ny, PIN_E, MU_PIN)) b.vx += (this.rng() - 0.5) * PIN_KICK;
               }
             }
           } else if (b.gate === gt && b.y < gt.y - 6) b.gate = null;
@@ -397,12 +418,7 @@
             const nx = dx / d, ny = dy / d;
             b.x = p[0] + nx * min;
             b.y = p[1] + ny * min;
-            const vn = b.vx * nx + b.vy * ny;
-            if (vn < 0) {
-              b.vx -= PIN_E * vn * nx;
-              b.vy -= PIN_E * vn * ny;
-              b.vx += (this.rng() - 0.5) * PIN_KICK;
-            }
+            if (contact(b, nx, ny, PIN_E, MU_PIN)) b.vx += (this.rng() - 0.5) * PIN_KICK;
           }
         }
         // 入賞判定
@@ -442,77 +458,146 @@
   }
 
   // ---------------- 描画 ----------------
+  // 盤面は奥（ベニヤの盤面）→ 部品（レール・枠・役物。盤面から浮いていて、右下に影を落とす）→ 釘（頭と影）→ 玉（影・つや・回転）
+  // の順に重ねて、立体的に見せる。動かない部分は別のキャンバスに1回だけ描いておき、毎フレーム貼るだけにする
+
+  const LIGHT = { x: -0.55, y: -0.85 }; // 光は左上から（影は右下に落ちる）
+  const SHADOW = { x: 0.9, y: 1.35 };   // 部品・釘・玉の影のずれ
 
   function createBoardView(canvas, board) {
     const g = canvas.getContext("2d");
-    let scale = 1;
+    let scale = 1, dpr = 1;
+    let base = null, baseKey = "";
     function resize() {
       const r = canvas.getBoundingClientRect();
-      const dpr = Math.min(2, root.devicePixelRatio || 1);
+      dpr = Math.min(2, root.devicePixelRatio || 1);
       scale = (r.width || W) / W;
       canvas.width = Math.round(W * scale * dpr);
       canvas.height = Math.round(H * scale * dpr);
       g.setTransform(dpr * scale, 0, 0, dpr * scale, 0, 0);
+      base = null;
     }
     resize();
     if (root.ResizeObserver) new ResizeObserver(resize).observe(canvas);
-    const line = (segs, color, w) => {
-      g.strokeStyle = color; g.lineWidth = w;
-      for (const [x1, y1, x2, y2] of segs) { g.beginPath(); g.moveTo(x1, y1); g.lineTo(x2, y2); g.stroke(); }
+    const line = (c, segs, color, w) => {
+      c.strokeStyle = color; c.lineWidth = w;
+      for (const [x1, y1, x2, y2] of segs) { c.beginPath(); c.moveTo(x1, y1); c.lineTo(x2, y2); c.stroke(); }
     };
-    const polyPath = () => {
-      g.beginPath();
-      for (const p of POLYS) {
-        g.moveTo(p[0], p[1]);
-        for (let i = 2; i < p.length; i += 2) g.lineTo(p[i], p[i + 1]);
-        g.closePath();
+    const polyPath = (c, list = POLYS, dx = 0, dy = 0) => {
+      c.beginPath();
+      for (const p of list) {
+        c.moveTo(p[0] + dx, p[1] + dy);
+        for (let i = 2; i < p.length; i += 2) c.lineTo(p[i] + dx, p[i + 1] + dy);
+        c.closePath();
       }
     };
+    const boardShape = (c) => { c.beginPath(); c.arc(TOP_ARC.x, TOP_ARC.y, TOP_ARC.r + 3, Math.PI, 0); c.lineTo(W, H); c.lineTo(0, H); c.closePath(); };
+
+    // 釘：影 → 胴 → 頭（光の当たる側が明るい）
+    function drawPin(c, x, y) {
+      c.fillStyle = "rgba(0,0,0,.45)";
+      c.beginPath(); c.ellipse(x + SHADOW.x * 0.8, y + SHADOW.y * 0.8, 1.35, 1.1, 0.6, 0, 7); c.fill();
+      const gr = c.createRadialGradient(x + LIGHT.x * 0.6, y + LIGHT.y * 0.6, 0.1, x, y, 1.35);
+      gr.addColorStop(0, "#ffffff"); gr.addColorStop(0.45, "#cfc9e2"); gr.addColorStop(1, "#6b6488");
+      c.fillStyle = gr;
+      c.beginPath(); c.arc(x, y, 1.3, 0, 7); c.fill();
+    }
+
+    // 動かない部分（盤面・部品・飾り・釘）を1回だけ描く
+    function buildBase() {
+      const cv = root.document ? root.document.createElement("canvas") : null;
+      if (!cv) return null;
+      cv.width = canvas.width; cv.height = canvas.height;
+      const c = cv.getContext("2d");
+      c.setTransform(dpr * scale, 0, 0, dpr * scale, 0, 0);
+      // 台の枠
+      c.fillStyle = "#0b0818";
+      c.fillRect(0, 0, W, H);
+      // 部品（盤面から浮いている）。上から光が当たって明るく、下に向かって少し暗い
+      const pg = c.createLinearGradient(0, 0, W, H);
+      pg.addColorStop(0, "#5a4c9c"); pg.addColorStop(1, "#382c6a");
+      c.fillStyle = pg;
+      boardShape(c); c.fill();
+      // 盤面（奥の板）。真ん中が少し明るい
+      const bg = c.createRadialGradient(W * 0.42, H * 0.45, 10, W * 0.5, H * 0.5, W * 0.75);
+      bg.addColorStop(0, "#251d52"); bg.addColorStop(1, "#0f0b25");
+      c.fillStyle = bg;
+      polyPath(c); c.fill("evenodd");
+      // 部品が盤面に落とす影（通れる部分の中だけ、壁のふちから右下へ）
+      c.save();
+      polyPath(c); c.clip("evenodd");
+      c.strokeStyle = "rgba(0,0,0,.55)"; c.lineWidth = 2.6; c.lineJoin = "round";
+      polyPath(c, POLYS, SHADOW.x, SHADOW.y); c.stroke();
+      c.strokeStyle = "rgba(0,0,0,.25)"; c.lineWidth = 4.5;
+      polyPath(c, POLYS, SHADOW.x * 1.6, SHADOW.y * 1.6); c.stroke();
+      c.restore();
+      // 部品のふちのハイライト（光の当たる左上側が明るい面取り）
+      c.save();
+      boardShape(c); polyPath(c); c.clip("evenodd");   // 部品の上だけ
+      c.strokeStyle = "rgba(255,255,255,.22)"; c.lineWidth = 1.2;
+      polyPath(c, POLYS, LIGHT.x * 0.6, LIGHT.y * 0.6); c.stroke();
+      c.restore();
+      c.strokeStyle = "#cbbff5"; c.lineWidth = 0.5;
+      polyPath(c); c.stroke();
+      // 図の飾り：水色の部品（ワープの通路）と、壁ではない線（ワープ出口の筒・液晶の下の線）
+      for (const p of BLUE) {
+        c.fillStyle = "rgba(0,0,0,.3)";
+        polyPath(c, [p], SHADOW.x * 0.6, SHADOW.y * 0.6); c.fill();
+        const bgr = c.createLinearGradient(p[0] - 6, p[1], p[0] + 6, p[1] + 20);
+        bgr.addColorStop(0, "rgba(200,232,255,.85)"); bgr.addColorStop(1, "rgba(110,170,240,.6)");
+        c.fillStyle = bgr;
+        polyPath(c, [p]); c.fill();
+      }
+      c.strokeStyle = "rgba(203,191,245,.75)"; c.lineWidth = 0.45;
+      polyPath(c, DECO); c.stroke();
+      // 打ち出しレーン（外レールと内レールのあいだの溝）
+      c.strokeStyle = "rgba(0,0,0,.45)"; c.lineWidth = BALL * 2 + 1.6; c.lineCap = "round";
+      c.beginPath(); c.moveTo(LANE[0][0], LANE[0][1]); for (const p of LANE) c.lineTo(p[0], p[1]); c.stroke();
+      c.strokeStyle = "rgba(243,194,82,.35)"; c.lineWidth = BALL * 2 + 0.6;
+      c.beginPath(); c.moveTo(LANE[0][0], LANE[0][1]); for (const p of LANE) c.lineTo(p[0], p[1]); c.stroke();
+      c.lineCap = "butt";
+      // 液晶（少しへこんだ窓）
+      c.fillStyle = "#0d0a1e";
+      c.fillRect(LCD.x0, LCD.y0, LCD.x1 - LCD.x0, LCD.y1 - LCD.y0);
+      // 一般入賞口・ワープ入口・ヘソ
+      c.fillStyle = "#4fd88f";
+      for (const pk of POCKETS) { c.beginPath(); c.arc(pk.x, pk.y + 1.5, 1.6, 0, 7); c.fill(); }
+      c.fillStyle = "rgba(140,200,255,.45)";
+      c.fillRect(WARP_IN[0][0], WARP_IN[1][1] - 1, WARP_IN[1][0] - WARP_IN[0][0], 1.5);
+      const hg = c.createRadialGradient(HESO.x - 1, HESO.y + 3, 0.5, HESO.x, HESO.y + 4.5, 4.4);
+      hg.addColorStop(0, "#ff8a72"); hg.addColorStop(1, "#a92a1c");
+      c.fillStyle = hg;
+      c.beginPath(); c.arc(HESO.x, HESO.y + 4.5, 4.2, 0, 7); c.fill();
+      c.fillStyle = "#fff"; c.font = "5px sans-serif"; c.textAlign = "center";
+      c.fillText("ヘソ", HESO.x, HESO.y + 13);
+      c.fillText("アタッカー", (ATTACKER.x0 + ATTACKER.x1) / 2, ATTACKER.y + 11);
+      c.fillText("電チュー", DENCHU.x, DENCHU.y - 7);
+      // 風車の台
+      c.strokeStyle = "rgba(216,210,234,.5)"; c.lineWidth = 0.6;
+      c.beginPath(); c.arc(WINDMILL.x, WINDMILL.y, WINDMILL.r, 0, 7); c.stroke();
+      // 釘（命釘は開きで動くので毎回描く）
+      for (const p of PINS) drawPin(c, p[0], p[1]);
+      return cv;
+    }
 
     function draw() {
-      // 盤面の外（台の枠）
-      g.fillStyle = "#0b0818";
-      g.fillRect(0, 0, W, H);
-      // 図の灰色の部分（レール・枠・役物）は部品の色、白い部分（玉が通れるところ）は盤面の色
-      g.fillStyle = "#463a80";
-      g.beginPath(); g.arc(TOP_ARC.x, TOP_ARC.y, TOP_ARC.r + 3, Math.PI, 0); g.lineTo(W, H); g.lineTo(0, H); g.closePath(); g.fill();
-      const bg = g.createLinearGradient(0, 0, 0, H);
-      bg.addColorStop(0, "#1f1846");
-      bg.addColorStop(1, "#120d2a");
-      g.fillStyle = bg;
-      polyPath();
-      g.fill("evenodd");
-      // 図の飾り：水色の部品（ワープの通路）と、壁ではない線（ワープ出口の筒・液晶の下の線）
-      g.fillStyle = "rgba(150,205,255,.55)";
-      for (const p of BLUE) { g.beginPath(); g.moveTo(p[0], p[1]); for (let i = 2; i < p.length; i += 2) g.lineTo(p[i], p[i + 1]); g.closePath(); g.fill(); }
-      g.strokeStyle = "rgba(203,191,245,.75)"; g.lineWidth = 0.45;
-      for (const p of DECO) { g.beginPath(); g.moveTo(p[0], p[1]); for (let i = 2; i < p.length; i += 2) g.lineTo(p[i], p[i + 1]); g.closePath(); g.stroke(); }
-      // 打ち出しレーン
-      g.strokeStyle = "rgba(243,194,82,.35)"; g.lineWidth = BALL * 2 + 1; g.lineCap = "round";
-      g.beginPath(); g.moveTo(LANE[0][0], LANE[0][1]); for (const p of LANE) g.lineTo(p[0], p[1]); g.stroke();
-      g.lineCap = "butt";
-      // 壁のふち
-      g.strokeStyle = "#cbbff5"; g.lineWidth = 0.6;
-      polyPath();
-      g.stroke();
-      // 液晶
-      g.fillStyle = "#0d0a1e";
-      g.fillRect(LCD.x0, LCD.y0, LCD.x1 - LCD.x0, LCD.y1 - LCD.y0);
-      // ワープ入口
-      g.fillStyle = "rgba(140,200,255,.45)";
-      g.fillRect(WARP_IN[0][0], WARP_IN[1][1] - 1, WARP_IN[1][0] - WARP_IN[0][0], 1.5);
+      const key = `${canvas.width}x${canvas.height}`;
+      if (!base || baseKey !== key) { base = buildBase(); baseKey = key; }
+      if (base) {
+        g.save(); g.setTransform(1, 0, 0, 1, 0, 0); g.drawImage(base, 0, 0); g.restore();
+      } else {
+        g.fillStyle = "#0b0818"; g.fillRect(0, 0, W, H);
+      }
       // アタッカー
       g.fillStyle = board.attackerOpen ? "#ffd257" : "#4a3a5a";
       g.fillRect(ATTACKER.x0, ATTACKER.y + 1, ATTACKER.x1 - ATTACKER.x0, 4);
-      if (!board.attackerOpen) line([ATTACKER_LID], "#ff5a5a", 1.6);
-      g.fillStyle = "#fff"; g.font = "5px sans-serif"; g.textAlign = "center";
-      g.fillText("アタッカー", (ATTACKER.x0 + ATTACKER.x1) / 2, ATTACKER.y + 11);
+      if (!board.attackerOpen) line(g, [ATTACKER_LID], "#ff5a5a", 1.6);
       // 電チュー（開くとベロが出る）
       const [bx1, by1, bx2, by2] = DENCHU_BAR;
       const out = board.denchuOpen ? 1 : 0.35;
-      line([[bx1, by1, bx1 + (bx2 - bx1) * out, by1 + (by2 - by1) * out]], board.denchuOpen ? "#ffd257" : "#7a6a3a", 2.2);
-      if (!board.denchuOpen) line([DENCHU_SHELF], "#7a6a3a", 1);
-      g.fillStyle = "#fff"; g.fillText("電チュー", DENCHU.x, DENCHU.y - 7);
+      line(g, [[bx1 + SHADOW.x * 0.6, by1 + SHADOW.y * 0.6, bx1 + (bx2 - bx1) * out + SHADOW.x * 0.6, by1 + (by2 - by1) * out + SHADOW.y * 0.6]], "rgba(0,0,0,.45)", 2.2);
+      line(g, [[bx1, by1, bx1 + (bx2 - bx1) * out, by1 + (by2 - by1) * out]], board.denchuOpen ? "#ffd257" : "#7a6a3a", 2.2);
+      if (!board.denchuOpen) line(g, [DENCHU_SHELF], "#7a6a3a", 1);
       // 普図（サブデジ）：変動中は点滅、当たりで緑。保留は小さな点
       const fu = board.futsu;
       const lit = fu.phase === "open" || (fu.phase === "spin" && Math.floor(performance.now() / 120) % 2 === 0);
@@ -520,43 +605,47 @@
       g.beginPath(); g.arc(SUBDIGI.x + 6, SUBDIGI.y - 4, 1.6, 0, 7); g.fill();
       g.fillStyle = "#ffd257";
       for (let i = 0; i < fu.holds; i++) { g.beginPath(); g.arc(SUBDIGI.x + 9.5 + i * 2.2, SUBDIGI.y - 4, 0.7, 0, 7); g.fill(); }
-      // ヘソとハカマ
-      line(board.hakama, "#e4412f", 1.2);
-      g.fillStyle = "#e4412f";
-      g.beginPath(); g.arc(HESO.x, HESO.y + 4.5, 4.2, 0, 7); g.fill();
-      g.fillStyle = "#fff"; g.fillText("ヘソ", HESO.x, HESO.y + 13);
-      // 一般入賞口
-      g.fillStyle = "#4fd88f";
-      for (const pk of POCKETS) { g.beginPath(); g.arc(pk.x, pk.y + 1.5, 1.6, 0, 7); g.fill(); }
-      // 風車
-      g.strokeStyle = "rgba(216,210,234,.5)"; g.lineWidth = 0.6;
-      g.beginPath(); g.arc(WINDMILL.x, WINDMILL.y, WINDMILL.r, 0, 7); g.stroke();
-      g.save();
-      g.translate(WINDMILL.x, WINDMILL.y);
-      g.rotate((performance.now() / 300) % (Math.PI * 2));
-      g.fillStyle = "#e4412f";
-      for (let i = 0; i < 4; i++) { g.rotate(Math.PI / 2); g.fillRect(-0.8, 0, 1.6, WINDMILL.r - 0.5); }
-      g.restore();
-      // 釘
-      g.fillStyle = "#d8d2ea";
-      for (const p of PINS.concat(board.pins.slice(-2))) {
-        g.beginPath();
-        g.arc(p[0], p[1], 1.25, 0, 7);
-        g.fill();
+      // ハカマと命釘
+      line(g, board.hakama, "#e4412f", 1.2);
+      for (const p of board.pins.slice(-2)) drawPin(g, p[0], p[1]);
+      // 風車（羽根の影 → 羽根）
+      const ang = (performance.now() / 300) % (Math.PI * 2);
+      for (const [dx, dy, col] of [[SHADOW.x, SHADOW.y, "rgba(0,0,0,.4)"], [0, 0, "#e4412f"]]) {
+        g.save();
+        g.translate(WINDMILL.x + dx, WINDMILL.y + dy);
+        g.rotate(ang);
+        g.fillStyle = col;
+        for (let i = 0; i < 4; i++) { g.rotate(Math.PI / 2); g.fillRect(-0.8, 0, 1.6, WINDMILL.r - 0.5); }
+        g.restore();
       }
-      // 玉
+      drawPin(g, WINDMILL.x, WINDMILL.y);
+      // 玉：影 → 鋼球（左上のつや、下側の映り込み）→ 回転が分かる反射の帯
       for (const b of board.balls) {
-        const grd = g.createRadialGradient(b.x - 1, b.y - 1, 0.5, b.x, b.y, BALL);
+        g.fillStyle = "rgba(0,0,0,.5)";
+        g.beginPath(); g.ellipse(b.x + SHADOW.x, b.y + SHADOW.y, BALL * 0.95, BALL * 0.8, 0.6, 0, 7); g.fill();
+      }
+      for (const b of board.balls) {
+        const grd = g.createRadialGradient(b.x + LIGHT.x * BALL * 0.45, b.y + LIGHT.y * BALL * 0.45, 0.2, b.x, b.y, BALL);
         grd.addColorStop(0, "#ffffff");
-        grd.addColorStop(1, "#8d93a8");
+        grd.addColorStop(0.35, "#d9dce8");
+        grd.addColorStop(0.8, "#7c8299");
+        grd.addColorStop(1, "#3c4054");
         g.fillStyle = grd;
-        g.beginPath();
-        g.arc(b.x, b.y, BALL, 0, 7);
-        g.fill();
+        g.beginPath(); g.arc(b.x, b.y, BALL, 0, 7); g.fill();
+        // 転がりの向きに回る、うっすらした反射の帯
+        const a = b.a || 0;
+        g.strokeStyle = "rgba(40,44,64,.35)"; g.lineWidth = 0.55;
+        g.beginPath(); g.ellipse(b.x, b.y, BALL * 0.82, BALL * 0.32, a, 0, Math.PI); g.stroke();
+        // 下側の映り込み（盤面の色）
+        g.fillStyle = "rgba(120,100,200,.25)";
+        g.beginPath(); g.ellipse(b.x + 0.4, b.y + BALL * 0.55, BALL * 0.55, BALL * 0.25, 0, 0, 7); g.fill();
+        // つや
+        g.fillStyle = "rgba(255,255,255,.9)";
+        g.beginPath(); g.ellipse(b.x + LIGHT.x * BALL * 0.42, b.y + LIGHT.y * BALL * 0.42, BALL * 0.28, BALL * 0.18, -0.6, 0, 7); g.fill();
       }
       // ステージの手前のふち（道釘の上にかぶさっている透明な部品）は、玉の上に重ねて描く
       g.strokeStyle = "rgba(203,191,245,.55)"; g.lineWidth = 0.45;
-      for (const p of DECO_OVER) { g.beginPath(); g.moveTo(p[0], p[1]); for (let i = 2; i < p.length; i += 2) g.lineTo(p[i], p[i + 1]); g.closePath(); g.stroke(); }
+      polyPath(g, DECO_OVER); g.stroke();
     }
     return { draw, resize };
   }
