@@ -258,6 +258,7 @@
       board.mode = inBonus ? "bonus" : state.mode;
       // 演出スピードを上げても、盤面（玉の動きと打ち出し）は最大2.5倍まで。速すぎると保留が追いつかずオーバー入賞ばかりになる
       board.step(dt * Math.min(2.5, 1 / speedFactor()));
+      watchLoop();
       boardView.draw();
       if (useBoard()) renderShotHint();
       } catch (e) {
@@ -530,6 +531,17 @@
     if (state.history.length > 200) state.history.length = 200;
   }
 
+  const loopErrors = [];
+  let lastLoopKick = 0;
+  // 見張り：保留が残っているのに変動のループが止まっていたら起こし直す。
+  // （ループが止まったまま保留が3個たまると、止め打ちで打ち出しも止まり、入賞が来ないので二度と動かなくなるのを防ぐ）
+  function watchLoop() {
+    if (running || state.completed || pendingReset || inBonus) return;
+    const need = state.holds.length > 0 || state.rushHolds.length > 0 || (handleOn && state.mode === "rush");
+    const now = performance.now();
+    if (need && now - lastLoopKick > 1500) { lastLoopKick = now; loop(); }
+  }
+
   async function loop() {
     if (running) return;
     running = true;
@@ -551,7 +563,11 @@
         }
       }
     } catch (e) {
+      // 変動の途中でエラーが出ても止まったままにしない（下の見張りがループを起こし直す）。原因を探せるように知らせて記録する
       console.error(e);
+      loopErrors.push(`${new Date().toLocaleTimeString()} ${e && e.message || e}`);
+      if (loopErrors.length > 5) loopErrors.shift();
+      showToast(`エラー：${e && e.message || e}`);
     } finally {
       running = false;
       if (pendingReset) doReset();
@@ -1397,7 +1413,7 @@
 
     const hot = window.claude && window.claude.hot;
     if (hot && hot.snapshot) hot.snapshot(() => ({ state }));
-    window.gensouDebug = { stage, engine, get board() { return board; }, get state() { return state; } }; // テスト用
+    window.gensouDebug = { stage, engine, loopErrors, get board() { return board; }, get state() { return state; }, get running() { return running; } }; // テスト用
   }
 
   if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {

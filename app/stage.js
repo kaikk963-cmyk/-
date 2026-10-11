@@ -454,17 +454,23 @@
         handlers.onPrompt && handlers.onPrompt(kind);
         let timer = null;
         let autoTimer = null;
+        let safety = null;
+        let done = false;
+        // 入力待ちが重なっても、それぞれが必ず1回だけ終わるようにする（前は共有の pending を見ていたので、
+        // 重なると後の入力待ちが永遠に終わらず、変動が止まったままになることがあった）
         const finish = (byUser) => {
-          if (!pending) return;
-          pending = null;
+          if (done) return;
+          done = true;
+          if (pending === me) pending = null;
           clearTimeout(timer);
+          clearTimeout(safety);
           clearInterval(autoTimer);
           prompt.remove();
           handlers.onPrompt && handlers.onPrompt(null);
           sfx(kind === "lever" ? "lever" : "press");
           resolve(byUser);
         };
-        pending = {
+        const me = {
           kind,
           got: 0,
           press(src) {
@@ -480,13 +486,15 @@
             return true;
           },
         };
-        prompt.addEventListener("click", () => pending && pending.press(kind === "lever" ? "lever" : "button"));
+        pending = me;
+        prompt.addEventListener("click", () => me.press(kind === "lever" ? "lever" : "button"));
         const idle = autoPush ? 450 : autoMs;
         timer = setTimeout(() => {
           if (kind === "renda") {
-            autoTimer = setInterval(() => pending && pending.press("button"), 45);
+            autoTimer = setInterval(() => me.press("button"), 45);
           } else finish(false);
         }, idle * speed);
+        safety = setTimeout(() => finish(false), (idle + 8000) * speed); // 念のため、どんなときも必ず先へ進む
       });
     }
 
