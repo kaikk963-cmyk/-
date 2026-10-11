@@ -209,6 +209,13 @@
           scheduleRender();
           return true;
         },
+        onFoul() {
+          // 盤面まで届かずにレーンを戻ってきた玉（ファール球）は、実機と同じく上皿に戻る（使った玉に数えない）
+          state.balls++;
+          state.fired--;
+          if (state.mode === "normal" && !inBonus) state.usedBalls = Math.max(0, state.usedBalls - 1);
+          scheduleRender();
+        },
         onHeso() {
           state.balls += 1;
           state.returns += 1;

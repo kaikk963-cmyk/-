@@ -48,11 +48,15 @@ free[att] = 1
 nf = (1 - free).astype(np.uint8)
 n, lab, st, _ = cv2.connectedComponentsWithStats(nf, connectivity=8)
 free[np.isin(lab, [i for i in range(1, n) if st[i, cv2.CC_STAT_AREA] < 160])] = 1  # 釘・文字
+# 壁につながってしまっている文字（「[特②電チュー]」「[アタッカー]」の札）も壁にしない
+for x0, y0, x1, y1 in [(722, 1040, 802, 1056), (915, 615, 990, 634)]:
+    sub = free[y0:y1, x0:x1]; sub[:] = 1
 def flood(free):
     nf = (1 - free).astype(np.uint8)
     reg = (1 - cv2.dilate(nf, np.ones((3, 3), np.uint8))).astype(np.uint8)
     ff = np.zeros((H_ + 2, W_ + 2), np.uint8)
     cv2.floodFill(reg, ff, (150, 820), 2, flags=4)
+    cv2.floodFill(reg, ff, (800, 1120), 2, flags=4)   # 電チューの下（ベロとサブデジ入賞口のまわり。ベロでふさがれて左の塗りがとどかない）
     return cv2.dilate((reg == 2).astype(np.uint8), np.ones((3, 3), np.uint8)) & free
 region = flood(free)
 # ステージの手前のふち（液晶の下の枠のいちばん下の線と、ステージの左はしの縦の線）は、道釘の上にかぶさって
