@@ -8,9 +8,9 @@
   const fmt = (n) => Math.round(n).toLocaleString("ja-JP");
 
   const DEFAULT_CUSTOM = { senbare: "s40", sakiyomi: "osusume", leverBuru: "off", impact: "off", rushMode: "default", challenge: "koumakan", chargeMode: "toppa" };
-  const DEFAULT_SETTINGS = { boardV: 9, board: "on", shot: "left", autoShot: "on", leftStrength: 40, rightStrength: 90, hesoOpen: 2.25, rate: 18, speed: "real", autoPush: "off", sound: "on", bgm: "off", volume: 0.7, vibe: "on", showRel: "on", presetYakumono: "std", presetSenbare: "std", spec: "middle", tomeuchi: "on" };
-  const SPEEDS = { real: 1, slow: 1.35, normal: 1, fast: 0.5, turbo: 0.2 };
-  const SPEED_LABEL = { real: "実機", normal: "標準", fast: "高速", turbo: "爆速" };
+  const DEFAULT_SETTINGS = { boardV: 9, board: "on", shot: "left", autoShot: "on", leftStrength: 40, rightStrength: 90, hesoOpen: 2.25, rate: 18, speed: "real", speedX: 1, autoPush: "off", sound: "on", bgm: "off", volume: 0.7, vibe: "on", showRel: "on", presetYakumono: "std", presetSenbare: "std", spec: "middle", tomeuchi: "on" };
+  const SPEED_MAX = 20; // 倍速の上限
+  const SPEED_LABEL = { real: "実機", normal: "短め" }; // 変動の長さ
   const DEFAULT_DEV = { overrides: {}, force: "none", senbare: "off", rush6000: null, dropBtn: "on" };
 
   function fresh(custom, settings, dev) {
@@ -49,7 +49,13 @@
       if (s.settings.boardV !== DEFAULT_SETTINGS.boardV) {
         for (const k of ["boardV", "leftStrength", "rightStrength", "hesoOpen"]) s.settings[k] = DEFAULT_SETTINGS[k];
       }
+      // 演出スピードの段階（高速・爆速）は、変動の長さ＋倍速スライダーに置きかえた
+      const OLD_SPEED = { slow: [1, "normal"], fast: [2, "normal"], turbo: [5, "normal"] };
+      if (OLD_SPEED[s.settings.speed]) [s.settings.speedX, s.settings.speed] = OLD_SPEED[s.settings.speed];
+      s.settings.speedX = Math.max(1, Math.min(SPEED_MAX, +s.settings.speedX || 1));
       s.dev = { ...DEFAULT_DEV, ...s.dev };
+      // 足りない項目（古い版や壊れたデータ）は初期値で埋める
+      for (const [k, v] of Object.entries(fresh(s.custom, s.settings, s.dev))) if (s[k] === undefined) s[k] = v;
       // 役物投下ボタンは最初から出す（以前は初期OFFだった）
       if ((s.devV || 0) < 2) s.dev.dropBtn = "on";
       // 確定演出（EX先バレ・復活）の信頼度は100%固定にした。以前に書き換わった値は消す
@@ -129,7 +135,9 @@
   }
 
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-  const speedFactor = () => SPEEDS[state.settings.speed] || 1;
+  // 倍速（1〜20倍）。演出・待ち時間は 1/倍速 になる
+  const speedX = () => Math.max(1, Math.min(SPEED_MAX, +state.settings.speedX || 1));
+  const speedFactor = () => 1 / speedX();
 
   // ---------------- 打ち出しと保留 ----------------
 
@@ -242,6 +250,7 @@
     board.strength = state.settings.leftStrength;
     boardView = B.createBoardView($("board"), board);
     let last = performance.now();
+    let perfCap = SPEED_MAX;
     const frame = (t) => {
       // 先に次のフレームを予約しておく（途中で例外が出ても盤面が止まらないように）
       requestAnimationFrame(frame);
@@ -256,8 +265,13 @@
       tomeuchi = useBoard() && handleOn && full && state.settings.tomeuchi === "on";
       board.firing = useBoard() && handleOn && !state.completed && !tomeuchi;
       board.mode = inBonus ? "bonus" : state.mode;
-      // 演出スピードを上げても、盤面（玉の動きと打ち出し）は最大2.5倍まで。速すぎると保留が追いつかずオーバー入賞ばかりになる
-      board.step(dt * Math.min(2.5, 1 / speedFactor()));
+      // 盤面（玉の動きと打ち出し）も倍速にあわせて速くする。端末が追いつかないとき（1フレームの計算が重いとき）は自動で控えめにする
+      const t0 = performance.now();
+      boardMul = Math.min(speedX(), perfCap);
+      board.step(dt * boardMul);
+      const cost = performance.now() - t0;
+      if (cost > 18) perfCap = Math.max(1, perfCap * 0.85);
+      else if (cost < 8) perfCap = Math.min(SPEED_MAX, perfCap * 1.04);
       watchLoop();
       boardView.draw();
       if (useBoard()) renderShotHint();
@@ -271,6 +285,7 @@
   // 大当り1ラウンド：アタッカーを開き、10カウント（とその直後のオーバー入賞）か開放時間切れで閉じる。
   // 1カウントにつき15発の払い出し。盤面を使わないときは null を返して決まった出玉にする
   let roundHook = null;
+  let boardMul = 1; // いまの盤面の速さ（倍）
   function bonusRound(onCount) {
     if (!useBoard()) return Promise.resolve(null);
     return new Promise((resolve) => {
@@ -295,7 +310,7 @@
         if (count >= 10 && !closing) closing = setTimeout(finish, 250 * speedFactor());
       };
       board.attackerOpen = true;
-      const limit = setTimeout(finish, 30000 * speedFactor());
+      const limit = setTimeout(finish, 30000 / Math.max(1, boardMul)); // 盤面の時間で30秒
     });
   }
 
@@ -1135,7 +1150,8 @@
       body = field("玉の物理演算（盤面）", "ONにすると、盤面に玉を打って、ヘソに入った玉だけが回転になる。ハンドルの強さで回り方が変わる。OFFにすると下の回転率どおりに回る。", seg("settings.board", { on: "ON", off: "OFF" }, st.board));
       body += field("回転率（1000円あたり）", `ヘソへの入賞しやすさ。いまのスペック（${S.label}）の等価ボーダーは約${border().toFixed(1)}回転。保留が満タンのときの入賞は無駄になるので、実測はこれより少し下がる。`,
         `<input id="rateRange" class="range" type="range" min="12" max="26" step="0.5" value="${st.rate}">`, `<b id="rateVal">${st.rate}回転</b>`).replace("ヘソへの入賞しやすさ。", "物理盤面がOFFのときのヘソへの入賞しやすさ。");
-      body += field("演出スピード", "「実機」は実際の台に近い時間で動く。保留が少ないとハズレ変動は約7秒、保留3個以上で約2.5秒に短縮。大当りはアタッカーに10個入るごとに1ラウンドが終わる。速くしても、物理盤面の玉の動きと打ち出しは最大2.5倍まで。", seg("settings.speed", SPEED_LABEL, st.speed));
+      body += field("変動の長さ", "「実機」は実際の台に近い時間で動く。保留が少ないとハズレ変動は約7秒、保留3個以上で約2.5秒に短縮。「短め」は約1秒。", seg("settings.speed", SPEED_LABEL, st.speed));
+      body += field("倍速", "演出も盤面の玉の動き・打ち出しも、まとめて速くする（1〜20倍）。端末が追いつかないときは盤面だけ自動で控えめになる。", `<input id="speedRange" class="range" type="range" min="1" max="${SPEED_MAX}" step="0.5" value="${speedX()}">`, `<b id="speedVal">×${speedX()}</b>`);
       body += field("止め打ち", "ONにすると、保留が3個たまったら打ち出しを自動で止める（実機の止め打ちと同じ。すでに打った玉の分の空きを1つ残す）。保留満タンのときにヘソに入った玉は回転にならないので、玉のむだを減らせる。BONUS中は止めない。", seg("settings.tomeuchi", { on: "ON", off: "OFF" }, st.tomeuchi));
       body += field("自動PUSH", "ONにすると、PUSHや八卦炉レバーの指示をすぐ自動で消化する。OFFでも数秒待てば自動で進む。", seg("settings.autoPush", { off: "OFF", on: "ON" }, st.autoPush));
       body += field("サウンド", "", seg("settings.sound", { on: "ON", off: "OFF" }, st.sound));
@@ -1203,6 +1219,13 @@
     });
     const rb = $("resetBtn");
     if (rb) rb.addEventListener("click", () => openConfirm());
+    const sr = $("speedRange");
+    if (sr) sr.addEventListener("input", () => {
+      state.settings.speedX = +sr.value;
+      $("speedVal").textContent = `×${sr.value}`;
+      stage.setSpeed(speedFactor());
+      save();
+    });
     const hr = $("hesoRange");
     if (hr) hr.addEventListener("input", () => {
       state.settings.hesoOpen = +hr.value;
@@ -1222,7 +1245,7 @@
 
   function applySettings() {
     const st = state.settings;
-    stage.setSpeed(SPEEDS[st.speed] || 1);
+    stage.setSpeed(speedFactor());
     stage.setAutoPush(st.autoPush === "on");
     window.Sound.setEnabled(st.sound === "on");
     window.Sound.setVolume(st.volume);

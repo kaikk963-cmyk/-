@@ -36,7 +36,8 @@ await page.click("#menuBtn");
 await page.click('[data-set="custom.senbare"][data-val="ex"]');
 await page.screenshot({ path: path.join(out, "02-custom.png") });
 await page.click('#menuTabs [data-tab="settings"]');
-await page.click('[data-set="settings.speed"][data-val="turbo"]');
+await page.click('[data-set="settings.speed"][data-val="normal"]');
+await page.$eval("#speedRange", (r) => { r.value = "5"; r.dispatchEvent(new Event("input", { bubbles: true })); });
 await page.click('[data-set="settings.autoPush"][data-val="on"]');
 await page.click("#menuClose");
 
