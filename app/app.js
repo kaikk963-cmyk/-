@@ -8,7 +8,7 @@
   const fmt = (n) => Math.round(n).toLocaleString("ja-JP");
 
   const DEFAULT_CUSTOM = { senbare: "s40", sakiyomi: "osusume", leverBuru: "off", impact: "off", rushMode: "default", challenge: "koumakan", chargeMode: "toppa" };
-  const DEFAULT_SETTINGS = { boardV: 9, board: "on", shot: "left", autoShot: "on", leftStrength: 40, rightStrength: 90, hesoOpen: 2.25, rate: 18, speed: "real", speedX: 1, autoPush: "off", sound: "on", bgm: "off", volume: 0.7, vibe: "on", showRel: "on", presetYakumono: "std", presetSenbare: "std", spec: "middle", tomeuchi: "on" };
+  const DEFAULT_SETTINGS = { boardV: 9, board: "on", shot: "left", autoShot: "on", leftStrength: 40, rightStrength: 90, hesoOpen: 2.25, rate: 18, speed: "real", speedX: 1, autoPush: "off", sound: "on", bgm: "off", volume: 0.7, vibe: "on", showRel: "on", presetYakumono: "std", presetSenbare: "std", spec: "middle", tomeuchi: "on", complete: 95000 };
   const SPEED_MAX = 20; // 倍速の上限
   const SPEED_LABEL = { real: "実機", normal: "短め" }; // 変動の長さ
   const DEFAULT_DEV = { overrides: {}, force: "none", senbare: "off", rush6000: null, dropBtn: "on" };
@@ -538,14 +538,21 @@
     render();
   }
 
-  function onPayout(n) {
-    state.balls += n;
-    state.totalOut += n;
-    if (state.totalOut >= S.complete && !state.completed) {
+  // コンプリート（出玉の上限）。設定で自由に変えられる。0なら上限なし
+  const completeLimit = () => Math.max(0, Math.floor(+state.settings.complete || 0));
+  function checkComplete() {
+    const lim = completeLimit();
+    if (lim > 0 && state.totalOut >= lim && !state.completed) {
       state.completed = true;
       setHandle(false);
       showComplete();
     }
+  }
+
+  function onPayout(n) {
+    state.balls += n;
+    state.totalOut += n;
+    checkComplete();
     scheduleRender();
   }
 
@@ -628,7 +635,7 @@
   }
 
   function showComplete() {
-    stage.overlay(`コンプリート<small>出玉が${fmt(S.complete)}発に達したため遊技終了です。データタブからリセットできます。</small>`, "complete");
+    stage.overlay(`コンプリート<small>出玉が${fmt(completeLimit())}発に達したため遊技終了です。データタブからリセットするか、設定でコンプリートの上限を上げると続けられます。</small>`, "complete");
   }
 
   // ---------------- 表示 ----------------
@@ -751,6 +758,20 @@
     renderHolds();
   }
 
+  // コンプリートの上限を変える。上げたらコンプリート後でも遊技を再開できる。下げてすでに超えていればその場でコンプリート
+  function setComplete(v) {
+    state.settings.complete = Math.max(0, Math.floor(+v || 0));
+    if (state.completed && (!completeLimit() || state.totalOut < completeLimit())) {
+      state.completed = false;
+      document.querySelectorAll(".complete").forEach((n) => n.remove());
+      showToast("コンプリートを解除しました。続けて遊べます");
+    }
+    checkComplete();
+    save();
+    render();
+    if (!$("menu").hidden) renderMenu();
+  }
+
   function setSpec(key) {
     if (!D.SPECS[key] || key === state.settings.spec) return;
     state.settings.spec = key;
@@ -850,7 +871,7 @@
     const big = state.dev.rush6000 ?? devDefaults.rush6000;
     body += field("ハンドルの強さ（物理盤面）", "左打ち・右打ちを選んだときの打ち出しの強さ（0〜100）。左打ちは35〜55あたりで、玉が盤面の上まで上がってから左側に落ちる。",
       `<div class="drop-btns" style="grid-template-columns:auto 1fr auto 1fr;align-items:center">左<input class="num-in" type="number" min="0" max="100" step="1" data-strength="leftStrength" value="${state.settings.leftStrength}" aria-label="左打ちの強さ">右<input class="num-in" type="number" min="0" max="100" step="1" data-strength="rightStrength" value="${state.settings.rightStrength}" aria-label="右打ちの強さ"></div>`);
-    body += field("ヘソ釘の開き（物理盤面）", "大きいほど命釘に弾かれにくく、よく回る。標準は2.25（約20回転/1000円）。0.5が図と同じ命釘の位置。", `<input id="hesoRange" class="range" type="range" min="0.5" max="2.5" step="0.25" value="${state.settings.hesoOpen}">`, `<b id="hesoVal">${state.settings.hesoOpen}</b>`);
+    body += field("ヘソ釘の開き（物理盤面）", "大きいほど命釘に弾かれにくく、よく回る。0.5が図と同じ命釘の位置、標準は2.25（約20回転/1000円）。2.5より上は命釘そのものが開いてヘソの口が広くなる（4で約38回転、6で約57回転、最大12.5で約90回転）。", `<input id="hesoRange" class="range" type="range" min="0.5" max="12.5" step="0.25" value="${state.settings.hesoOpen}">`, `<b id="hesoVal">${state.settings.hesoOpen}</b>`);
     body += field(`夢想封印MAX（${S.labels.big}）の割合`, `RUSH中の大当りのうち、BONUS中に陰陽玉が落ちて${S.labels.big}になる割合（スペックごとの標準は${Math.round(devDefaults.rush6000 * 100)}%）。`,
       `<input class="num-in wide" type="number" inputmode="decimal" min="0" max="100" step="0.5" data-dev="rush6000" value="${+(big * 100).toFixed(2)}" aria-label="6000発の割合（%）">`, `<b>${+(big * 100).toFixed(1)}%</b>`);
     body += `<div class="field"><button type="button" class="btn-danger" id="devReset">すべて元の値に戻す</button></div>`;
@@ -1160,6 +1181,9 @@
         `<input id="rateRange" class="range" type="range" min="12" max="26" step="0.5" value="${st.rate}">`, `<b id="rateVal">${st.rate}回転</b>`).replace("ヘソへの入賞しやすさ。", "物理盤面がOFFのときのヘソへの入賞しやすさ。");
       body += field("変動の長さ", "「実機」は実際の台に近い時間で動く。保留が少ないとハズレ変動は約7秒、保留3個以上で約2.5秒に短縮。「短め」は約1秒。", seg("settings.speed", SPEED_LABEL, st.speed));
       body += field("倍速", "演出も盤面の玉の動き・打ち出しも、まとめて速くする（1〜20倍）。端末が追いつかないときは盤面だけ自動で控えめになる。", `<input id="speedRange" class="range" type="range" min="1" max="${SPEED_MAX}" step="0.5" value="${speedX()}">`, `<b id="speedVal">×${speedX()}</b>`);
+      body += field("コンプリート（出玉の上限）", "総出玉がこの数に達すると遊技終了。実機は95,000発。0にすると上限なし。上げれば、コンプリートしたあとでも続けられる。",
+        `<div class="drop-btns" style="grid-template-columns:1fr auto auto auto;align-items:center"><input class="num-in wide" type="number" inputmode="numeric" min="0" step="1000" data-complete value="${completeLimit()}" aria-label="コンプリートの出玉の上限"><button type="button" data-complete-set="95000">実機</button><button type="button" data-complete-set="200000">20万</button><button type="button" data-complete-set="0">なし</button></div>`,
+        `<b>${completeLimit() ? fmt(completeLimit()) + "発" : "上限なし"}</b>`);
       body += field("止め打ち", "ONにすると、保留が3個たまったら打ち出しを自動で止める（実機の止め打ちと同じ。すでに打った玉の分の空きを1つ残す）。保留満タンのときにヘソに入った玉は回転にならないので、玉のむだを減らせる。BONUS中は止めない。", seg("settings.tomeuchi", { on: "ON", off: "OFF" }, st.tomeuchi));
       body += field("自動PUSH", "ONにすると、PUSHや八卦炉レバーの指示をすぐ自動で消化する。OFFでも数秒待てば自動で進む。", seg("settings.autoPush", { off: "OFF", on: "ON" }, st.autoPush));
       body += field("サウンド", "", seg("settings.sound", { on: "ON", off: "OFF" }, st.sound));
@@ -1185,7 +1209,7 @@
         <tr><th>弾幕RUSH</th><td>1/${(1 / S.rushProb).toFixed(1)}・ST${S.stSpins}回転<br>継続率 約${Math.round(cont * 100)}%</td></tr>
         <tr><th>出玉（実獲得）</th><td>異変解決BONUS ${S.rounds.bonus}R 約${fmt(S.payout.bonus10R)}発${S.chargeProb ? `<br>霊力チャージ 2R 約${fmt(S.payout.charge2R)}発` : ""}<br>RUSH中 ${S.rounds.rush}R 約${fmt(S.payout.rush3000)}発（${Math.round(S.rush6000Rate * 100)}%で${S.rounds.rush + S.rounds.big}R 約${fmt(S.payout.rush6000)}発）</td></tr>
         <tr><th>賞球・カウント</th><td>1&amp;5&amp;${S.attackerPay}・10カウント</td></tr>
-        <tr><th>コンプリート</th><td>出玉${fmt(S.complete)}発で遊技終了</td></tr>
+        <tr><th>コンプリート</th><td>${completeLimit() ? `出玉${fmt(completeLimit())}発で遊技終了（設定で変更できる）` : "上限なし（設定で変更できる）"}</td></tr>
         <tr><th>等価ボーダー</th><td>約${border().toFixed(1)}回転／1000円</td></tr>
       </tbody></table></div>
       <p class="note">スペックと演出の信頼度は e東京喰種（2025）の解析値に合わせています。演出は当否を先に決めてから選ぶので、表の信頼度はシミュレーションでもそのまま再現されます。</p>`;
@@ -1316,6 +1340,8 @@
     $("menuClose").addEventListener("click", closeMenu);
     $("menu").addEventListener("click", (e) => {
       if (e.target === $("menu")) closeMenu();
+      const cs = e.target.closest("[data-complete-set]");
+      if (cs) setComplete(cs.dataset.completeSet);
       const b = e.target.closest("[data-set]");
       if (b) {
         const [scope, key] = b.dataset.set.split(".");
@@ -1331,6 +1357,7 @@
     });
     $("menu").addEventListener("change", (e) => {
       if (e.target.matches("[data-dev]")) onDevInput(e.target);
+      else if (e.target.matches("[data-complete]")) setComplete(e.target.value);
       else if (e.target.matches("[data-strength]")) {
         state.settings[e.target.dataset.strength] = Math.max(0, Math.min(100, +e.target.value || 0));
         setShot(state.settings.shot);

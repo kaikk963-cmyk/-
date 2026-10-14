@@ -163,9 +163,10 @@
 
   // ヘソ釘（命釘2本）の間隔。設定の「ヘソ釘の開き」（0.5〜2.5）で実際に広がる。
   // 2本の間を抜けた玉だけがハカマの中を落ちてヘソに入る（入ったように見えて弾かれる、ということはない）
-  const inochiHalf = (open) => 4.27 + (open - 0.5) * 0.12; // 0.5で図の命釘の位置
+  // 0.5で図の命釘の位置。2.5まではほんの少しずつ、その先（〜12.5）は命釘そのものが大きく開いてヘソの口が広くなる
+  const inochiHalf = (open) => 4.27 + (Math.min(open, 2.5) - 0.5) * 0.12 + Math.max(0, open - 2.5) * 0.5;
   // 命釘の間に来た玉が、命釘に弾かれずに抜ける割合（実機の玉は勢いがあるので、すき間に来ても多くは命釘に弾かれる）
-  const inochiPass = (open) => Math.max(0.02, 0.1 + (open - 0.5) * 0.22); // 標準の2.25で約49%（1000円で約19回転）
+  const inochiPass = (open) => Math.min(1, Math.max(0.02, 0.1 + (open - 0.5) * 0.22)); // 標準の2.25で約49%（1000円で約19回転）、約4.6で弾かれなくなる
 
   // 外レールのすぐ内側の釘（左上の入口の1本）は、図では線の太さのぶん外レールに寄って描かれていて、
   // そのままだと右打ちの玉がレールと釘のすき間を通れない。当たり判定だけ玉1個ぶん通れる位置まで内側に寄せる（見た目は図の位置）
@@ -207,6 +208,7 @@
       const g = inochiHalf(open);
       // ハカマ：命釘からヘソの口までの左右の壁
       this.hakama = [[HESO.x - g, INOCHI_Y, HESO.x - g + 0.5, HESO.y + 3], [HESO.x + g, INOCHI_Y, HESO.x + g - 0.5, HESO.y + 3]];
+      this.hesoW = Math.max(HESO.w, g - 0.6); // ヘソの口の幅（ハカマの内側ぜんぶ）
       this.grid = new Map();
       for (const p of this.pins) {
         const k = `${Math.floor(p[0] / 10)},${Math.floor(p[1] / 10)}`;
@@ -422,7 +424,7 @@
           }
         }
         // 入賞判定
-        if (Math.abs(b.x - HESO.x) < HESO.w && b.y > HESO.y - 2 && b.y < HESO.y + 4) {
+        if (Math.abs(b.x - HESO.x) < this.hesoW && b.y > HESO.y - 2 && b.y < HESO.y + 4) {
           this.stats.heso++;
           if (b.warped) this.stats.hesoStage = (this.stats.hesoStage || 0) + 1;
           this.handlers.onHeso && this.handlers.onHeso();
@@ -564,10 +566,6 @@
       for (const pk of POCKETS) { c.beginPath(); c.arc(pk.x, pk.y + 1.5, 1.6, 0, 7); c.fill(); }
       c.fillStyle = "rgba(140,200,255,.45)";
       c.fillRect(WARP_IN[0][0], WARP_IN[1][1] - 1, WARP_IN[1][0] - WARP_IN[0][0], 1.5);
-      const hg = c.createRadialGradient(HESO.x - 1, HESO.y + 3, 0.5, HESO.x, HESO.y + 4.5, 4.4);
-      hg.addColorStop(0, "#ff8a72"); hg.addColorStop(1, "#a92a1c");
-      c.fillStyle = hg;
-      c.beginPath(); c.arc(HESO.x, HESO.y + 4.5, 4.2, 0, 7); c.fill();
       c.fillStyle = "#fff"; c.font = "5px sans-serif"; c.textAlign = "center";
       c.fillText("ヘソ", HESO.x, HESO.y + 13);
       c.fillText("アタッカー", (ATTACKER.x0 + ATTACKER.x1) / 2, ATTACKER.y + 11);
@@ -605,7 +603,12 @@
       g.beginPath(); g.arc(SUBDIGI.x + 6, SUBDIGI.y - 4, 1.6, 0, 7); g.fill();
       g.fillStyle = "#ffd257";
       for (let i = 0; i < fu.holds; i++) { g.beginPath(); g.arc(SUBDIGI.x + 9.5 + i * 2.2, SUBDIGI.y - 4, 0.7, 0, 7); g.fill(); }
-      // ハカマと命釘
+      // ヘソ（ヘソ釘の開きで口の幅が変わる）・ハカマ・命釘
+      const hw = Math.max(4.2, board.hesoW || 0);
+      const hg = g.createRadialGradient(HESO.x - 1, HESO.y + 3, 0.5, HESO.x, HESO.y + 4.5, hw + 0.2);
+      hg.addColorStop(0, "#ff8a72"); hg.addColorStop(1, "#a92a1c");
+      g.fillStyle = hg;
+      g.beginPath(); g.ellipse(HESO.x, HESO.y + 4.5, hw, 4.2, 0, 0, 7); g.fill();
       line(g, board.hakama, "#e4412f", 1.2);
       for (const p of board.pins.slice(-2)) drawPin(g, p[0], p[1]);
       // 風車（羽根の影 → 羽根）
