@@ -333,6 +333,14 @@
   }
 
   // 左打ち／右打ち。強さはそれぞれ開発者タブで調整できる
+  // 自動切り替えのON/OFF（盤面の下のAUTOボタンと設定画面）
+  function setAutoShot(on) {
+    state.settings.autoShot = on ? "on" : "off";
+    const b = $("autoShotBtn");
+    if (b) b.setAttribute("aria-pressed", String(on));
+    save();
+  }
+
   function setShot(shot) {
     state.settings.shot = shot;
     board.strength = shot === "right" ? state.settings.rightStrength : state.settings.leftStrength;
@@ -1247,6 +1255,8 @@
     const st = state.settings;
     stage.setSpeed(speedFactor());
     stage.setAutoPush(st.autoPush === "on");
+    const ab = $("autoShotBtn");
+    if (ab) ab.setAttribute("aria-pressed", String(st.autoShot === "on"));
     window.Sound.setEnabled(st.sound === "on");
     window.Sound.setVolume(st.volume);
     window.Sound.setBgm(st.bgm === "on");
@@ -1356,8 +1366,19 @@
         renderMenu();
       }
     });
-    $("leftShot").addEventListener("click", () => setShot("left"));
-    $("rightShot").addEventListener("click", () => setShot("right"));
+    // 自分で左打ち・右打ちを押したら、その打ち方を優先して自動切り替えはOFFにする
+    const manualShot = (shot) => {
+      if (state.settings.autoShot === "on") { setAutoShot(false); showToast("自動切り替えをOFFにしました（AUTOで戻せます）"); }
+      setShot(shot);
+    };
+    $("leftShot").addEventListener("click", () => manualShot("left"));
+    $("rightShot").addEventListener("click", () => manualShot("right"));
+    $("autoShotBtn").addEventListener("click", () => {
+      const on = state.settings.autoShot !== "on";
+      setAutoShot(on);
+      showToast(on ? "自動切り替えON：RUSH・BONUS中は右打ち、通常時は左打ち" : "自動切り替えOFF");
+      if (!$("menu").hidden) renderMenu();
+    });
     $("rushEndBtn").addEventListener("click", requestEndRush);
     // スペック切り替え：ミドル → 99ver. → 甘デジ → ミドル …
     $("specBtn").addEventListener("click", () => {
