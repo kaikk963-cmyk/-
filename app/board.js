@@ -155,6 +155,9 @@
   const SUBDIGI = POCKETS[POCKETS.length - 1];
   [SUBDIGI.x, SUBDIGI.y] = T9(747, 1118); // 入賞口の口に入ったところで入賞
   const DENCHU_SHELF = [...T9(742, 1056), ...T9(792, 1064)];
+  // 左上の道釘（43.31,91.68）・（46.15,89.78）と壁の角の下にある、まわりを囲まれた小さなくぼみのふた。
+  // 玉より狭いすき間しかないので本来は入れないが、すり抜け中の玉が落ちると二度と出られなくなる。壁はすり抜けないので、ふたをしておく
+  const NOTCH_LIDS = [[43.31, 91.68, 46.15, 89.78], [46.15, 89.78, 48.37, 88.2]];
   // 普図：電サポ中（RUSH）はほぼ毎回当たって長く開く。電サポなし（通常時・大当り中）はほとんど開かない
   const FUTSU = {
     rush: { spin: 0.3, win: 0.99, open: 6 },
@@ -241,13 +244,6 @@
           if (this.balls.length < 80) this.launch();
         }
       }
-      // 普図の変動と電チューの開放
-      const fu = this.futsu, fs = FUTSU[this.mode === "rush" ? "rush" : "normal"];
-      fu.t -= dt;
-      if (fu.phase === "idle" && fu.holds > 0) { fu.holds--; fu.phase = "spin"; fu.t = fs.spin; fu.win = this.rng() < fs.win; }
-      else if (fu.phase === "spin" && fu.t <= 0) { if (fu.win) { fu.phase = "open"; fu.t = fs.open; } else fu.phase = "idle"; }
-      else if (fu.phase === "open" && fu.t <= 0) fu.phase = "idle";
-      this.denchuOpen = fu.phase === "open";
       // 速い玉がいるときは細かく刻む（1回に玉の半径の半分ほどしか進まないように）
       let vmax = 0;
       for (const b of this.balls) if (!b.lane && !b.stage) vmax = Math.max(vmax, Math.abs(b.vx) + Math.abs(b.vy));
@@ -277,9 +273,19 @@
         contact(b, nx, ny, graze ? 1 : WALL_E, MU_WALL);
       }
     }
+    // 普図の変動と電チューの開放。細かい刻みごとに進めるので、高速（1回の step が長い）でも開閉の時間が変わらない
+    tickFutsu(dt) {
+      const fu = this.futsu, fs = FUTSU[this.mode === "rush" ? "rush" : "normal"];
+      fu.t -= dt;
+      if (fu.phase === "idle" && fu.holds > 0) { fu.holds--; fu.phase = "spin"; fu.t = fs.spin; fu.win = this.rng() < fs.win; }
+      else if (fu.phase === "spin" && fu.t <= 0) { if (fu.win) { fu.phase = "open"; fu.t += fs.open; } else fu.phase = "idle"; } // はみ出した分は開放時間から引く
+      else if (fu.phase === "open" && fu.t <= 0) fu.phase = "idle";
+      this.denchuOpen = fu.phase === "open";
+    }
     sub(dt) {
+      this.tickFutsu(dt);
       const keep = [];
-      const extra = this.hakama.concat(this.attackerOpen ? [] : [ATTACKER_LID], this.denchuOpen ? [] : [DENCHU_SHELF]);
+      const extra = this.hakama.concat(NOTCH_LIDS, this.attackerOpen ? [] : [ATTACKER_LID], this.denchuOpen ? [] : [DENCHU_SHELF]);
       for (const b of this.balls) {
         b.life += dt;
         if (b.life > 25) { this.stats.stuck = (this.stats.stuck || 0) + 1; continue; } // 引っかかった玉は消す

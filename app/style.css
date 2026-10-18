@@ -703,15 +703,17 @@ button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px s
   inset: 0;
   z-index: 9;
   display: grid;
-  place-content: center;
+  place-content: safe center;
   text-align: center;
-  gap: 8px;
+  gap: 4px;
+  padding: 4%;
+  overflow: auto;
   background: rgba(10, 6, 20, 0.88);
   font-family: var(--font-display);
-  font-size: 34px;
+  font-size: clamp(16px, 11cqw, 34px); /* 小さい液晶でも文字が切れないよう液晶の幅に合わせる */
   color: var(--c-gold);
 }
-.complete small { font-family: var(--font-ui); font-size: 13px; color: var(--muted); }
+.complete small { font-family: var(--font-ui); font-size: clamp(9px, 4.4cqw, 13px); line-height: 1.35; color: var(--muted); }
 
 @media (prefers-reduced-motion: reduce) {
   .stage.quake, .reel.shake, .ctl.buru, .bg.rush { animation: none !important; }
@@ -757,6 +759,16 @@ button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px s
 .drop-btns button { padding: 10px 4px; font-size: 13px; }
 .controls.has-drop { grid-template-columns: none; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 6px; }
 .controls.has-drop .ctl small { font-size: 9px; }
+/* 4〜5列に詰めるとボタンが細くなるので、文字を折り返さず小さくしてボタンの中に収める */
+.controls.has-drop .ctl { min-width: 0; padding: 4px 2px; overflow: hidden; }
+.controls.has-drop .ctl > * { max-width: 100%; white-space: nowrap; }
+.controls.has-drop .ctl .glyph { font-size: clamp(12px, 4.2vw, 18px); }
+.controls.has-drop .ctl .lbl { font-size: 11px; line-height: 1.15; }
+.controls.has-drop .ctl small { font-size: 8px; letter-spacing: 0; }
+/* RUSH中の5列：さらに詰めて、キーの説明（ハンドル（H）など）は省く */
+.controls.has-drop:has(#rushEndBtn:not([hidden])) .ctl .glyph { font-size: clamp(12px, 3.8vw, 16px); }
+.controls.has-drop:has(#rushEndBtn:not([hidden])) .ctl .lbl { font-size: 9px; }
+.controls.has-drop:has(#rushEndBtn:not([hidden])) .ctl:is(.handle, .push, .lever) small { display: none; }
 .ctl.drop { background: radial-gradient(circle at 50% 35%, #ffffff, #f0d9dc 45%, #c22a3a); border-color: #ffd0d6; color: #3a0610; }
 .ctl.drop small { color: #5a1420; }
 
@@ -830,7 +842,8 @@ button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px s
 .spec-btn { margin-left: auto; height: 42px; min-width: 76px; padding: 0 10px; border-radius: 12px; font-size: 13px; font-weight: 700; color: var(--gold); border: 1px solid var(--gold); background: var(--panel); white-space: nowrap; }
 .spec-btn[data-spec="ama99"] { color: #7fe0ff; border-color: #7fe0ff; }
 .spec-btn[data-spec="ama"] { color: #8dff9e; border-color: #8dff9e; }
-.toast { position: absolute; left: 50%; top: 6%; transform: translateX(-50%); z-index: 6; padding: 8px 14px; border-radius: 999px; background: rgba(10, 8, 22, 0.92); border: 1px solid var(--gold); color: #fff; font-size: 13px; font-weight: 700; white-space: nowrap; pointer-events: none; }
+.toast { position: absolute; left: 50%; top: 6%; transform: translateX(-50%); z-index: 6; padding: 8px 14px; border-radius: 14px; background: rgba(10, 8, 22, 0.92); border: 1px solid var(--gold); color: #fff; font-size: 13px; font-weight: 700; pointer-events: none;
+  width: max-content; max-width: calc(100% - 16px); box-sizing: border-box; text-align: center; line-height: 1.35; } /* 長い文は盤面の幅で折り返す */
 
 /* ---- 原作設定の予告 ---- */
 .crest.mini { display: inline-block; width: 9cqw; max-width: 30px; vertical-align: middle; }

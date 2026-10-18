@@ -1,9 +1,10 @@
 // オフラインでも遊べるようにアプリ本体をキャッシュする。ファイルを更新したら VERSION を上げる。
-const VERSION = "gensou-v24";
+const VERSION = "gensou-v25";
 const FILES = ["./", "index.html", "style.css", "data.js", "engine.js", "sound.js", "assets.js", "cloud.js", "board.js", "stage.js", "app.js", "manifest.json", "icon.svg", "icon-192.png", "icon-512.png"];
 
 self.addEventListener("install", (e) => {
-  e.waitUntil(caches.open(VERSION).then((c) => c.addAll(FILES)));
+  // HTTPキャッシュ（Pages は max-age=600）の古い版を拾わないよう、必ずネットから取り直す
+  e.waitUntil(caches.open(VERSION).then((c) => c.addAll(FILES.map((f) => new Request(f, { cache: "reload" })))));
   self.skipWaiting();
 });
 
