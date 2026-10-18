@@ -237,20 +237,20 @@
       this.balls.push({ x: p.x, y: p.y, vx: 0, vy: 0, w: 0, a: 0, life: 0, lane: true, s: 0, v });
     }
     step(dt) {
-      if (this.firing) {
-        this.fireAcc += dt * this.fireRate;
-        while (this.fireAcc >= 1) {
-          this.fireAcc -= 1;
-          if (this.balls.length < 80) this.launch();
-        }
-      }
-      // 速い玉がいるときは細かく刻む（1回に玉の半径の半分ほどしか進まないように）
-      let vmax = 0;
-      for (const b of this.balls) if (!b.lane && !b.stage) vmax = Math.max(vmax, Math.abs(b.vx) + Math.abs(b.vy));
-      const sub = Math.min(SUB, 1.5 / Math.max(1, vmax));
       let t = dt;
       while (t > 0) {
-        const h = Math.min(sub, t);
+        // 速い玉がいるときは細かく刻む（1回に玉の半径の半分ほどしか進まないように）
+        let vmax = 0;
+        for (const b of this.balls) if (!b.lane && !b.stage) vmax = Math.max(vmax, Math.abs(b.vx) + Math.abs(b.vy));
+        const h = Math.min(SUB, 1.5 / Math.max(1, vmax), t);
+        // 打ち出しも刻みごとに行う（高倍速で1フレームの時間が長くても、玉が同時に重なって飛ばないように）
+        if (this.firing) {
+          this.fireAcc += h * this.fireRate;
+          while (this.fireAcc >= 1) {
+            this.fireAcc -= 1;
+            if (this.balls.length < 80) this.launch();
+          }
+        }
         this.sub(h);
         t -= h;
       }

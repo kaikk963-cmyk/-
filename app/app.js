@@ -1631,7 +1631,7 @@
 
     const hot = window.claude && window.claude.hot;
     if (hot && hot.snapshot) hot.snapshot(() => ({ state }));
-    window.gensouDebug = { stage, engine, loopErrors, get board() { return board; }, get state() { return state; }, get running() { return running; } }; // テスト用
+    window.gensouDebug = { stage, engine, loopErrors, get board() { return board; }, get state() { return state; }, get running() { return running; }, get boardMul() { return boardMul; } }; // テスト用
   }
 
   if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
