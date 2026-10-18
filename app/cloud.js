@@ -36,7 +36,7 @@
       const s = await saveDoc().get();
       return s.exists ? s.data().state || null : null;
     } catch {
-      return null;
+      return undefined; // 読めなかった（保存なしの null と区別する）
     }
   }
 

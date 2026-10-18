@@ -9,9 +9,15 @@
 
   const DEFAULT_CUSTOM = { senbare: "s40", sakiyomi: "osusume", leverBuru: "off", impact: "off", rushMode: "default", challenge: "koumakan", chargeMode: "toppa" };
   const DEFAULT_SETTINGS = { boardV: 9, board: "on", shot: "left", autoShot: "on", leftStrength: 40, rightStrength: 90, hesoOpen: 2.25, rate: 18, speed: "real", speedX: 1, autoPush: "off", sound: "on", bgm: "off", volume: 0.7, vibe: "on", showRel: "on", presetYakumono: "std", presetSenbare: "std", spec: "middle", tomeuchi: "on", complete: 95000 };
-  const SPEED_MAX = 20; // 倍速の上限
+  const SPEED_MAX = 100; // 倍速の上限
+  // 倍速スライダーの目盛り（低い倍速を細かく選べるように、上ほど間隔を広げる）
+  const SPEED_STEPS = [1, 1.5, 2, 2.5, 3, 4, 5, 6, 7, 8, 10, 12, 15, 20, 25, 30, 40, 50, 60, 70, 80, 90, 100];
+  const speedIndex = (x) => SPEED_STEPS.reduce((bi, v, i) => (Math.abs(v - x) < Math.abs(SPEED_STEPS[bi] - x) ? i : bi), 0);
   const SPEED_LABEL = { real: "実機", normal: "短め" }; // 変動の長さ
   const DEFAULT_DEV = { overrides: {}, force: "none", senbare: "off", rush6000: null, dropBtn: "on" };
+
+  // 開発者モードの設定を写す。overrides は入れ物ごと写す（初期値のオブジェクトを書き換えないように）
+  const devCopy = (dev) => ({ ...DEFAULT_DEV, ...dev, overrides: { ...((dev && dev.overrides) || {}) } });
 
   function fresh(custom, settings, dev) {
     return {
@@ -27,7 +33,7 @@
       devV: 3,
       custom: { ...DEFAULT_CUSTOM, ...custom },
       settings: { ...DEFAULT_SETTINGS, ...settings },
-      dev: { ...DEFAULT_DEV, ...dev },
+      dev: devCopy(dev),
     };
   }
 
@@ -53,7 +59,7 @@
       const OLD_SPEED = { slow: [1, "normal"], fast: [2, "normal"], turbo: [5, "normal"] };
       if (OLD_SPEED[s.settings.speed]) [s.settings.speedX, s.settings.speed] = OLD_SPEED[s.settings.speed];
       s.settings.speedX = Math.max(1, Math.min(SPEED_MAX, +s.settings.speedX || 1));
-      s.dev = { ...DEFAULT_DEV, ...s.dev };
+      s.dev = devCopy(s.dev);
       // 足りない項目（古い版や壊れたデータ）は初期値で埋める
       for (const [k, v] of Object.entries(fresh(s.custom, s.settings, s.dev))) if (s[k] === undefined) s[k] = v;
       // 役物投下ボタンは最初から出す（以前は初期OFFだった）
@@ -85,35 +91,84 @@
   let inBonus = false;
   let pendingReset = false;
   let started = false;
+  let cloudChecked = false; // アカウント側の保存と比べ終わるまでは書き込まない（新しいほうを古いデータで上書きしないように）
+  let cloudWait = false; // 起動直後、アカウントのデータを読み込むまでは遊技を始めない（届かなくても数秒で始める）
+  let pendingRemote = null; // 遊技中に届いた、より新しいアカウントのデータ（変動の切れ目で切り替える）
+  let spinSnap = null; // 変動・BONUSの途中は、その変動の前の状態を保存する（途中で閉じても集計が食い違わないように）
 
   function save() {
     state.savedAt = Date.now();
+    let out = state;
+    if (spinSnap) {
+      // 設定類だけはいまの値を残す
+      out = JSON.parse(spinSnap);
+      out.custom = state.custom;
+      out.settings = state.settings;
+      out.dev = state.dev;
+      out.savedAt = state.savedAt;
+    }
+    const json = JSON.stringify(out);
     try {
-      localStorage.setItem(KEY, JSON.stringify(state));
+      localStorage.setItem(KEY, json);
     } catch {}
-    window.GensouCloud.saveState(state);
+    // アカウントへの書き込みは数秒後なので、いまの内容を写して渡す
+    if (cloudChecked) window.GensouCloud.saveState(JSON.parse(json));
+  }
+
+  // アカウント側のデータに切り替える
+  function adoptRemote(remote) {
+    state = remote;
+    current = null;
+    spinSnap = null;
+    applyDev();
+    stage.setMode(state.mode);
+    window.Sound.setTheme(state.mode === "rush" ? "rush" : "normal");
+    applySettings();
+    setShot(state.settings.shot);
+    board.setHeso(state.settings.hesoOpen);
+    // コンプリートの表示も、切り替えたデータに合わせる
+    document.querySelectorAll(".complete").forEach((n) => n.remove());
+    if (state.completed) {
+      hideHint();
+      setHandle(false);
+      showComplete();
+    }
+    cloudChecked = true;
+    save();
+    render();
+  }
+
+  function takeRemote() {
+    const r = pendingRemote;
+    pendingRemote = null;
+    adoptRemote(r);
+  }
+
+  function endCloudWait() {
+    if (!cloudWait) return;
+    cloudWait = false;
+    if (handleOn) loop();
   }
 
   // アカウント側の保存と同期する。新しいほうのプレイデータを使い、素材は双方向にそろえる
   async function syncCloud() {
     const C = window.GensouCloud;
-    if (!(await C.init())) return;
+    if (!(await C.init())) return endCloudWait();
     cloudOn = true;
-    const remote = migrate(await C.loadState());
+    const loaded = await C.loadState();
+    // 読み込みに失敗したときは、アカウントの保存を古い端末のデータで上書きしないよう書き込まない
+    if (loaded === undefined) return endCloudWait();
+    const remote = migrate(loaded);
     // 起動時に端末から読めたデータの保存時刻と比べる（起動直後の保存で新しく見えないように）
-    if (remote && (remote.savedAt || 0) > startSavedAt && !running && !handleOn) {
-      state = remote;
-      current = null;
-      applyDev();
-      stage.setMode(state.mode);
-      window.Sound.setTheme(state.mode === "rush" ? "rush" : "normal");
-      applySettings();
-      setShot(state.settings.shot);
-      board.setHeso(state.settings.hesoOpen);
-      render();
+    if (remote && (remote.savedAt || 0) > startSavedAt) {
+      // 変動中なら、その変動が終わってから切り替える（それまではアカウントへ書き込まない）
+      if (!running && !inBonus) adoptRemote(remote);
+      else pendingRemote = remote;
     } else {
+      cloudChecked = true;
       save();
     }
+    endCloudWait();
     const A = window.GensouAssets;
     let changed = false;
     for (const key of C.artKeys()) {
@@ -135,7 +190,7 @@
   }
 
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-  // 倍速（1〜20倍）。演出・待ち時間は 1/倍速 になる
+  // 倍速（1〜100倍）。演出・待ち時間は 1/倍速 になる
   const speedX = () => Math.max(1, Math.min(SPEED_MAX, +state.settings.speedX || 1));
   const speedFactor = () => 1 / speedX();
 
@@ -165,7 +220,8 @@
   }
 
   function addRushHold() {
-    if (state.rushHolds.length >= S.holdMax) return;
+    // 保留はSTの残り回転数までしか持てない（消化できない保留に当りや告知を出さないように）。それ以上はオーバー入賞と同じ扱い
+    if (state.rushHolds.length >= S.holdMax || state.rushHolds.length >= state.stLeft) return;
     const hold = engine.makeHold("rush", state.custom, takeForce("rush"));
     hold.shown = hold.reveal === "entry" ? hold.color : null;
     state.rushHolds.push(hold);
@@ -231,10 +287,10 @@
           scheduleRender();
         },
         onDenchu() {
-          if (inBonus) return;
+          // 賞球はBONUS中も払い出す（BONUS中の入賞は保留にはしない）
           state.balls += 1;
           state.returns += 1;
-          if (state.mode === "rush") addRushHold();
+          if (!inBonus && state.mode === "rush") addRushHold();
           scheduleRender();
         },
         onAttacker() {
@@ -263,12 +319,14 @@
       const held = state.mode === "rush" ? state.rushHolds.length : state.holds.length;
       const full = !inBonus && held >= S.holdMax - 1;
       tomeuchi = useBoard() && handleOn && full && state.settings.tomeuchi === "on";
-      board.firing = useBoard() && handleOn && !state.completed && !tomeuchi;
+      board.firing = useBoard() && handleOn && !state.completed && !tomeuchi && !cloudWait;
       board.mode = inBonus ? "bonus" : state.mode;
       // 盤面（玉の動きと打ち出し）も倍速にあわせて速くする。端末が追いつかないとき（1フレームの計算が重いとき）は自動で控えめにする
       const t0 = performance.now();
       boardMul = Math.min(speedX(), perfCap);
       board.step(dt * boardMul);
+      // 大当りラウンドの開放時間は盤面の時間で数える（裏に回って盤面が止まっている間や、倍速を下げたときに早く閉じないように）
+      if (roundFinish && (roundLeft -= dt * boardMul) <= 0) roundFinish();
       const cost = performance.now() - t0;
       if (cost > 18) perfCap = Math.max(1, perfCap * 0.85);
       else if (cost < 8) perfCap = Math.min(SPEED_MAX, perfCap * 1.04);
@@ -285,19 +343,26 @@
   // 大当り1ラウンド：アタッカーを開き、10カウント（とその直後のオーバー入賞）か開放時間切れで閉じる。
   // 1カウントにつき15発の払い出し。盤面を使わないときは null を返して決まった出玉にする
   let roundHook = null;
+  let roundFinish = null; // 開放中のラウンドを閉じる（リセット・コンプリートで打ち切るときにも使う）
+  let roundLeft = 0; // 開放時間の残り（盤面の時間で秒）
   let boardMul = 1; // いまの盤面の速さ（倍）
+  // リセットの予約中・コンプリート後は、残りのラウンドと演出を飛ばす
+  const bonusAborted = () => pendingReset || state.completed;
   function bonusRound(onCount) {
     if (!useBoard()) return Promise.resolve(null);
     return new Promise((resolve) => {
+      if (bonusAborted()) return resolve(0);
       let count = 0;
       let paid = 0;
       let done = false;
       let closing = null;
+      let limit = null;
       const finish = () => {
         if (done) return;
         done = true;
         board.attackerOpen = false;
         roundHook = null;
+        roundFinish = null;
         clearTimeout(limit);
         clearTimeout(closing);
         resolve(paid);
@@ -310,7 +375,11 @@
         if (count >= 10 && !closing) closing = setTimeout(finish, 250 * speedFactor());
       };
       board.attackerOpen = true;
-      const limit = setTimeout(finish, 30000 / Math.max(1, boardMul)); // 盤面の時間で30秒
+      roundLeft = 30; // 盤面の時間で30秒（数えるのは毎フレームの盤面の処理）
+      roundFinish = finish;
+      // 念のため：盤面のフレームがずっと来ないときも、表に出ているのに2分たてば閉じる
+      const guard = () => { if (document.hidden) limit = setTimeout(guard, 10000); else finish(); };
+      limit = setTimeout(guard, 120000);
     });
   }
 
@@ -382,7 +451,8 @@
   }
 
   function topUpRushHolds() {
-    while (state.rushHolds.length < S.holdMax) {
+    // STの残り回転数を超えては貯めない（RUSH終了で消える保留を作らない）
+    while (state.rushHolds.length < Math.min(S.holdMax, Math.max(1, state.stLeft))) {
       const hold = engine.makeHold("rush", state.custom, takeForce("rush"));
       hold.shown = hold.reveal === "entry" ? hold.color : null;
       state.rushHolds.push(hold);
@@ -394,6 +464,8 @@
   // ---------------- 変動 ----------------
 
   async function spinNormal() {
+    spinSnap = JSON.stringify(state);
+    if (state.holds[0].result.kind !== "miss") save(); // 当りの保留は回す前に保存しておく（BONUS中に閉じても回し直せるように）
     const hold = state.holds.shift();
     current = hold;
     state.spins++;
@@ -406,13 +478,17 @@
     if (hold.senbare) sc.steps.unshift({ t: "card", id: "touga", title: "先バレ", text: "当該変動", color: "gold" });
     await stage.play(sc.steps, { short: state.holds.length >= 3, real: state.settings.speed === "real", holds: state.holds.length });
     current = null;
+    renderHolds(); // 先バレの表示を消してからBONUSへ
     if (hold.result.kind === "hit") await bonusNormal(hold, sc.digits);
     else if (hold.result.kind === "charge") await chargeHit(hold);
     afterSpin();
   }
 
   async function spinRush() {
-    if (!useBoard()) topUpRushHolds();
+    // ハンドルを離したあとは、残りの保留を消化するだけ（貯め直さない）
+    if (!useBoard() && handleOn) topUpRushHolds();
+    spinSnap = JSON.stringify(state);
+    if (state.rushHolds[0].result.kind !== "miss") save();
     const hold = state.rushHolds.shift();
     current = hold;
     state.stLeft--;
@@ -427,6 +503,7 @@
       state.rushHits++;
       state.chain++;
       const got = await runBonus(engine.bonusSteps(hold.result, sc.digits, "rush", state.custom));
+      stage.setMode("rush"); // BONUSの背景からRUSHに戻す
       state.chainBalls += got;
       state.stLeft = S.stSpins;
       state.maxChain = Math.max(state.maxChain, state.chain);
@@ -446,6 +523,8 @@
   }
 
   async function bonusNormal(hold, digits) {
+    // 初当りがすべてRUSH直行のスペック（甘デジ）では、切り替え前に引いた保留や「大当り→通常」の固定もRUSHに入れる（演出と結果をそろえる）
+    if (S.hitRushRate >= 1) hold.result.rush = true;
     state.hits++;
     const at = state.sinceBonus;
     state.sinceBonus = 0;
@@ -467,6 +546,7 @@
   }
 
   function enterRush(firstBalls) {
+    endRushRequested = false; // 前のRUSHへの終了の指示は持ち越さない
     state.mode = "rush";
     state.stLeft = S.stSpins;
     state.chain = 1;
@@ -487,10 +567,16 @@
     const rush = state.mode === "rush";
     const list = rush ? state.rushHolds : state.holds;
     if (list.length && list[0].forcedDrop) return; // 次の変動にはもう落ちている
+    // 先バレ・フラン襲来・虹保留など、もう結果を見せている保留は引き直さない
+    const x = list[0];
+    if (x && (x.senbare || x.notice || x.shown === "rainbow")) {
+      showToast("次の保留はもう確定の演出が出ています");
+      return;
+    }
     let h = null;
     if (list.length) {
       h = engine.makeHold(rush ? "rush" : "normal", state.custom, { drop: true });
-      h.shown = list[0].shown;
+      h.shown = h.reveal === "entry" ? h.color : null; // 見た目も引き直した結果に合わせる
       list[0] = h;
       renderHolds();
     } else {
@@ -511,7 +597,8 @@
       running = true;
       endRush().finally(() => {
         running = false;
-        afterSpin();
+        if (pendingReset) doReset();
+        else afterSpin();
       });
     }
   }
@@ -531,6 +618,7 @@
   }
 
   function afterSpin() {
+    spinSnap = null;
     const diff = state.balls - state.invested / (S.rent.yen / S.rent.balls);
     state.graph.push(Math.round(diff));
     if (state.graph.length > 3000) state.graph = state.graph.filter((_, i) => i % 2 === 0);
@@ -546,6 +634,7 @@
       state.completed = true;
       setHandle(false);
       showComplete();
+      if (roundFinish) roundFinish(); // 開放中のラウンドも閉じる
     }
   }
 
@@ -566,18 +655,25 @@
   // 見張り：保留が残っているのに変動のループが止まっていたら起こし直す。
   // （ループが止まったまま保留が3個たまると、止め打ちで打ち出しも止まり、入賞が来ないので二度と動かなくなるのを防ぐ）
   function watchLoop() {
-    if (running || state.completed || pendingReset || inBonus) return;
+    if (pendingRemote && !running && !inBonus) takeRemote();
+    if (running || state.completed || pendingReset || inBonus || cloudWait) return;
     const need = state.holds.length > 0 || state.rushHolds.length > 0 || (handleOn && state.mode === "rush");
     const now = performance.now();
     if (need && now - lastLoopKick > 1500) { lastLoopKick = now; loop(); }
   }
 
   async function loop() {
-    if (running) return;
+    if (running || cloudWait) return;
     running = true;
     try {
       while (!state.completed && !pendingReset) {
-        if (state.mode === "rush" && endRushRequested) {
+        if (pendingRemote) {
+          // 変動の切れ目で、あとから届いたアカウントのデータに切り替える
+          takeRemote();
+          continue;
+        }
+        // ST を使い切ったところ（RUSH終了の途中で閉じたとき）から再開したら、そのままRUSHを終える
+        if (state.mode === "rush" && (endRushRequested || state.stLeft <= 0)) {
           await endRush();
           afterSpin();
         } else if (state.mode === "rush") {
@@ -600,6 +696,7 @@
       showToast(`エラー：${e && e.message || e}`);
     } finally {
       running = false;
+      spinSnap = null;
       if (pendingReset) doReset();
       render();
     }
@@ -608,11 +705,21 @@
   // ---------------- 操作 ----------------
 
   function setHandle(on) {
+    // コンプリート中はハンドルを入れない（入ったままだと、上限を上げたとたんに勝手に打ち出してしまう）
+    if (on && state.completed) {
+      window.Sound.unlock();
+      hideHint();
+      handleOn = false;
+      if (!document.querySelector(".complete")) showComplete();
+      showToast("コンプリート中です。設定でコンプリートの上限を上げると続けられます");
+      renderControls();
+      return;
+    }
     handleOn = on;
     if (on) {
       window.Sound.unlock();
       hideHint();
-      if (state.completed) return;
+      if (cloudWait) showToast("アカウントのデータを読み込んでいます…");
       loop();
     }
     renderControls();
@@ -692,9 +799,10 @@
     for (const k of Object.keys(D.SENBARE)) {
       list.push({ key: `senbare.${k}`, title: `先陰陽玉落下（${D.CUSTOMS.senbare.choices[k]}）`, group: D.SENBARE[k], p: P.spin, unit: "保留" });
     }
-    list.push({ key: "hand", title: "陰陽玉落下（変動中）", group: D.NORMAL_YOKOKU.find((g) => g.id === "hand"), p: P.spin, unit: "回転" });
+    // inSpinDrop: 変動中の陰陽玉落下（先バレONのときは入賞時に落ちるので出ない）
+    list.push({ key: "hand", title: "陰陽玉落下（変動中）", group: D.NORMAL_YOKOKU.find((g) => g.id === "hand"), p: P.spin, unit: "回転", inSpinDrop: true });
     list.push({ key: "sakura", title: "西行妖 開花予告（陰陽玉弱落下）", group: D.NORMAL_YOKOKU.find((g) => g.id === "sakura"), p: P.spin, unit: "回転" });
-    list.push({ key: "spDrop", title: "SP発展時の陰陽玉落下", group: D.NORMAL_SP_YOKOKU.find((g) => g.id === "spDrop"), p: P.sp, unit: "SPリーチ" });
+    list.push({ key: "spDrop", title: "SP発展時の陰陽玉落下", group: D.NORMAL_SP_YOKOKU.find((g) => g.id === "spDrop"), p: P.sp, unit: "SPリーチ", inSpinDrop: true });
     list.push({ key: "revive", title: "復活演出", group: D.NORMAL_REVIVE, p: P.sp, unit: "SPリーチ" });
     list.push({ key: "reviveRush", title: "復活演出（RUSH中）", group: D.RUSH_REVIVE, p: P.rushSp, unit: "SPリーチ" });
     const seen = new Set();
@@ -703,7 +811,7 @@
         if (seen.has(g)) continue;
         if (g.id === "drop") {
           seen.add(g);
-          list.push({ key: `drop.${r.id}`, title: `${r.kind === "chara" ? "キャラリーチ（共通）" : r.label}の陰陽玉落下`, group: g, p: r.rel, unit: "リーチ" });
+          list.push({ key: `drop.${r.id}`, title: `${r.kind === "chara" ? "キャラリーチ（共通）" : r.label}の陰陽玉落下`, group: g, p: r.rel, unit: "リーチ", inSpinDrop: D.NORMAL_REACH.options.includes(r) });
         } else if (g.id === "yakuTiming") {
           seen.add(g);
           list.push({ key: "yakuTiming", title: "デバイス時の陰陽玉落下（全SP共通）", group: g, p: null, unit: "" });
@@ -747,20 +855,36 @@
 
   // スペックを切り替えたら、まだ回っていない保留も新しい確率で引き直す（先バレ・役物投下した保留はそのまま）
   function redrawHolds() {
+    const drawn = [];
     const fresh = (h, mode) => {
       if (h.senbare || h.forcedDrop) return h;
       const n = engine.makeHold(mode, state.custom);
       n.shown = null;
+      // 引き直しで先バレした保留は、入賞時と同じく陰陽玉を落として知らせる
+      if (n.senbare) {
+        n.shown = "yin";
+        drawn.push(n);
+      }
       return n;
     };
     state.holds = state.holds.map((h) => fresh(h, "normal"));
     state.rushHolds = state.rushHolds.map((h) => fresh(h, "rush"));
     renderHolds();
+    // RUSH中のヘソ保留は液晶に出ていないので、落下の演出はしない
+    if (state.mode === "normal") for (const n of drawn) stage.entry(state.holds.indexOf(n), n);
   }
 
   // コンプリートの上限を変える。上げたらコンプリート後でも遊技を再開できる。下げてすでに超えていればその場でコンプリート
   function setComplete(v) {
-    state.settings.complete = Math.max(0, Math.floor(+v || 0));
+    // 空欄・マイナス・数でないものは受け付けない（0だけが「上限なし」）
+    const t = String(v).trim();
+    const n = t === "" ? NaN : Number(t);
+    if (!Number.isFinite(n) || n < 0) {
+      showToast("0以上の数を入力してください（0で上限なし）");
+      if (!$("menu").hidden) renderMenu();
+      return;
+    }
+    state.settings.complete = Math.floor(n);
     if (state.completed && (!completeLimit() || state.totalOut < completeLimit())) {
       state.completed = false;
       document.querySelectorAll(".complete").forEach((n) => n.remove());
@@ -853,18 +977,21 @@
       `<div class="drop-btns"><button type="button" data-drop="normal">通常音</button><button type="button" data-drop="low">低音</button><button type="button" data-drop="high">高音</button><button type="button" data-drop="weak">弱落下</button></div>`);
     body += field("RUSHを強制終了", "弾幕RUSH中に押すと、今の変動（とBONUS）が終わったところでRUSHを終える。", `<button type="button" class="btn-danger" data-endrush ${state.mode === "rush" ? "" : "disabled"}>${state.mode === "rush" ? "RUSHを今すぐ終わらせる" : "RUSH中だけ押せます"}</button>`);
     body += field("メイン画面に役物投下ボタン", "PUSHとレバーの横に「役物投下」ボタンと、RUSH中は「RUSH終了」ボタンを出す（初期ON）。役物投下を押すと陰陽玉が落ちて、次の変動（保留がなければ次の入賞）の当否が実機の手落下と同じ信頼度（通常音 約72%・低音/高音は濃厚・RUSH中は大当り）で決まる。ボタンで出た大当りは履歴に「（役物投下）」と付く。", seg("dev.dropBtn", { off: "OFF", on: "ON" }, state.dev.dropBtn));
+    const moved = state.custom.senbare && state.custom.senbare !== "off"; // 先バレONなら変動中の落下は出ない
     for (const d of devGroups()) {
+      const off = d.inSpinDrop && moved;
       const changed = d.group.options.some((o) => state.dev.overrides[devKey(d, o)]);
       const rows = d.group.options.map((o) => {
         const k = devKey(d, o);
         return `<tr><th>${o.label}${o.rushOnly ? "<br><small>RUSH直行のみ</small>" : ""}</th>
           <td><input class="num-in" type="number" inputmode="decimal" min="0.1" max="100" step="0.1" data-dev="${k}" data-field="rel" value="${+(engine.baseOf(o) * 100).toFixed(2)}" ${devDefaults[k] && devDefaults[k].rel >= 1 ? 'disabled title="確定演出なので100%固定"' : ""} aria-label="${o.label}の信頼度（%・ミドル基準）">${S.key !== "middle" && Math.abs(o.rel - engine.baseOf(o)) > 1e-6 ? `<small class="now-rel">${S.short}で${+(o.rel * 100).toFixed(1)}%</small>` : ""}</td>
           <td><input class="num-in" type="number" inputmode="decimal" min="0" max="100" step="0.1" data-dev="${k}" data-field="share" value="${+(o.share * 100).toFixed(2)}" aria-label="${o.label}の当たり時の出現割合（%）"></td>
-          <td class="freq">${devFreq(o, d)}</td></tr>`;
+          <td class="freq">${off ? "出ない" : devFreq(o, d)}</td></tr>`;
       }).join("");
       const warn = devWarn(d);
-      body += `<details class="dev-group" ${d.key.startsWith("senbare") || d.key === "hand" ? "open" : ""}>
+      body += `<details class="dev-group" ${d.key.startsWith("senbare") || (d.key === "hand" && !off) ? "open" : ""}>
         <summary>${d.title}${changed ? ' <span class="chip dev">変更中</span>' : ""}</summary>
+        ${off ? `<p class="note">先バレがONの間は、陰陽玉は入賞時（先バレ）に落ちるので、変動中には落ちません。ここを変えても先バレをOFFにするまで反映されません。</p>` : ""}
         <div class="table-wrap"><table class="spec dev-table"><thead><tr><th>演出</th><th>信頼度%</th><th>当たり時%</th><th>出現</th></tr></thead><tbody>${rows}</tbody></table></div>
         ${warn ? `<p class="warn">${warn}</p>` : ""}</details>`;
     }
@@ -1180,7 +1307,7 @@
       body += field("回転率（1000円あたり）", `ヘソへの入賞しやすさ。いまのスペック（${S.label}）の等価ボーダーは約${border().toFixed(1)}回転。保留が満タンのときの入賞は無駄になるので、実測はこれより少し下がる。`,
         `<input id="rateRange" class="range" type="range" min="12" max="26" step="0.5" value="${st.rate}">`, `<b id="rateVal">${st.rate}回転</b>`).replace("ヘソへの入賞しやすさ。", "物理盤面がOFFのときのヘソへの入賞しやすさ。");
       body += field("変動の長さ", "「実機」は実際の台に近い時間で動く。保留が少ないとハズレ変動は約7秒、保留3個以上で約2.5秒に短縮。「短め」は約1秒。", seg("settings.speed", SPEED_LABEL, st.speed));
-      body += field("倍速", "演出も盤面の玉の動き・打ち出しも、まとめて速くする（1〜20倍）。端末が追いつかないときは盤面だけ自動で控えめになる。", `<input id="speedRange" class="range" type="range" min="1" max="${SPEED_MAX}" step="0.5" value="${speedX()}">`, `<b id="speedVal">×${speedX()}</b>`);
+      body += field("倍速", "演出も盤面の玉の動き・打ち出しも、まとめて速くする（1〜100倍）。端末が追いつかないときは盤面だけ自動で控えめになる。", `<input id="speedRange" class="range" type="range" min="0" max="${SPEED_STEPS.length - 1}" step="1" value="${speedIndex(speedX())}">`, `<b id="speedVal">×${speedX()}</b>`);
       body += field("コンプリート（出玉の上限）", "総出玉がこの数に達すると遊技終了。実機は95,000発。0にすると上限なし。上げれば、コンプリートしたあとでも続けられる。",
         `<div class="drop-btns" style="grid-template-columns:1fr auto auto auto;align-items:center"><input class="num-in wide" type="number" inputmode="numeric" min="0" step="1000" data-complete value="${completeLimit()}" aria-label="コンプリートの出玉の上限"><button type="button" data-complete-set="95000">実機</button><button type="button" data-complete-set="200000">20万</button><button type="button" data-complete-set="0">なし</button></div>`,
         `<b>${completeLimit() ? fmt(completeLimit()) + "発" : "上限なし"}</b>`);
@@ -1253,8 +1380,8 @@
     if (rb) rb.addEventListener("click", () => openConfirm());
     const sr = $("speedRange");
     if (sr) sr.addEventListener("input", () => {
-      state.settings.speedX = +sr.value;
-      $("speedVal").textContent = `×${sr.value}`;
+      state.settings.speedX = SPEED_STEPS[+sr.value] || 1;
+      $("speedVal").textContent = `×${state.settings.speedX}`;
       stage.setSpeed(speedFactor());
       save();
     });
@@ -1267,10 +1394,10 @@
     });
     const db = $("devReset");
     if (db) db.addEventListener("click", () => {
-      state.dev = { ...DEFAULT_DEV };
+      state.dev = devCopy();
       applyDev();
       save();
-      renderStatus();
+      applySettings(); // 役物投下ボタンの表示も元に戻す
       renderMenu();
     });
   }
@@ -1293,6 +1420,7 @@
     const showDrop = state.dev.dropBtn === "on";
     $("dropBtn").hidden = !showDrop;
     document.querySelector(".controls").classList.toggle("has-drop", showDrop);
+    renderControls(); // RUSH終了ボタンの表示
   }
 
   function openMenu() {
@@ -1309,6 +1437,10 @@
 
   function doReset() {
     pendingReset = false;
+    endRushRequested = false;
+    yakuPending = false;
+    fireAcc = 0;
+    spinSnap = null;
     state = fresh(state.custom, state.settings, state.dev);
     current = null;
     document.querySelectorAll(".complete").forEach((n) => n.remove());
@@ -1325,6 +1457,7 @@
     if (running) {
       pendingReset = true;
       setHandle(false);
+      if (roundFinish) roundFinish(); // BONUS中なら残りのラウンドを待たずに打ち切る
     } else {
       doReset();
     }
@@ -1341,7 +1474,12 @@
     $("menu").addEventListener("click", (e) => {
       if (e.target === $("menu")) closeMenu();
       const cs = e.target.closest("[data-complete-set]");
-      if (cs) setComplete(cs.dataset.completeSet);
+      if (cs) {
+        // 入力中の値があれば先に確定させてから、押したボタンの値にする
+        const a = document.activeElement;
+        if (a && a.matches && a.matches("[data-complete]")) a.blur();
+        setComplete(cs.dataset.completeSet);
+      }
       const b = e.target.closest("[data-set]");
       if (b) {
         const [scope, key] = b.dataset.set.split(".");
@@ -1354,6 +1492,11 @@
         applySettings();
         renderMenu();
       }
+    });
+    // 上限のボタンを押した瞬間に入力欄のフォーカスが外れると、その変更でメニューが描き直されてボタンの押下が消える。
+    // フォーカスを動かさずにクリックまで届ける
+    $("menu").addEventListener("mousedown", (e) => {
+      if (e.target.closest("[data-complete-set]")) e.preventDefault();
     });
     $("menu").addEventListener("change", (e) => {
       if (e.target.matches("[data-dev]")) onDevInput(e.target);
@@ -1438,7 +1581,7 @@
 
   function start(data) {
     state = (data && data.state) || load() || fresh();
-    state.dev = { ...DEFAULT_DEV, ...state.dev };
+    state.dev = devCopy(state.dev);
     startSavedAt = state.savedAt || 0;
     current = null;
     snapshotDevDefaults();
@@ -1448,6 +1591,7 @@
       onLog,
       onPayout,
       bonusRound,
+      aborted: () => inBonus && bonusAborted(),
       onVibrate: vibrate,
       onPrompt(kind) {
         $("pushBtn").classList.toggle("armed", kind === "button" || kind === "renda");
@@ -1473,11 +1617,14 @@
     setShot(state.settings.shot);
     applySettings();
     render();
+    // claude.ai で開いたときは、アカウントのデータを読み込むまで（最大5秒）遊技を始めない
+    cloudWait = !!(window.claude && typeof window.claude.use === "function");
+    if (cloudWait) setTimeout(endCloudWait, 5000);
     window.GensouAssets.init().then(() => {
       stage.refreshArt();
       loadCustomSounds();
       syncCloud();
-    });
+    }).catch(() => endCloudWait());
     if (state.completed) showComplete();
     else if (!started) stage.overlay(`<div class="t">e東方幻想弾幕録</div><div class="m">打ち出しで開始</div>`, "card tone-gold start-hint").style.cssText = "left:10%;right:10%;top:62%;z-index:7;pointer-events:none";
     requestAnimationFrame(() => renderGraph());

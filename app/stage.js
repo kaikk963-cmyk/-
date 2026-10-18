@@ -394,6 +394,7 @@
     let persist = [];
     let activeHoldEl = null;
     let uraWindow = null;
+    let bonusUra = null; // BONUS中の裏ボタン（先バレの裏ボタンより優先する）
 
     // 再生速度をかけて待つ。名目の時間は打ち出し計算のためにアプリへ知らせる。
     function wait(ms) {
@@ -571,12 +572,13 @@
         dropYinyang(hold.senbare.sound, { sound: "senbare" });
         flash();
         handlers.onLog && handlers.onLog(hold.senbare.info);
-        // 落下後しばらくPUSHで裏ボタン
+        // 落下後しばらくPUSHで裏ボタン（BONUS中の入賞では出さない。BONUSの裏ボタンを消さないように）
+        if (bonusUra) return;
         handlers.onUra && handlers.onUra(true);
         const close = setTimeout(() => {
-          if (uraWindow) { uraWindow = null; handlers.onUra && handlers.onUra(false); }
+          if (uraWindow === mine) { uraWindow = null; handlers.onUra && handlers.onUra(false); }
         }, 2600 * Math.max(speed, 0.5));
-        uraWindow = () => {
+        const mine = () => {
           clearTimeout(close);
           handlers.onUra && handlers.onUra(false);
           sfx("press");
@@ -590,6 +592,7 @@
             setTimeout(() => n.remove(), 1800);
           }
         };
+        uraWindow = mine;
       }
     }
 
@@ -1146,10 +1149,10 @@
           ${st.ura ? `<div class="ura" hidden></div><div class="hint">PUSHで裏ボタン</div>` : ""}`));
         sfx("fanfare");
         rightShoot.hidden = false;
-        let uraShown = false;
+        let w = null;
         if (st.ura) {
-          uraWindow = () => {
-            uraShown = true;
+          w = () => {
+            bonusUra = null;
             const u = scr.querySelector(".ura");
             u.hidden = false;
             u.className = `ura ${tone(st.ura.color)}`;
@@ -1157,11 +1160,14 @@
             sfx("card", st.ura.color);
             if (st.ura.info) handlers.onLog && handlers.onLog(st.ura.info);
           };
+          bonusUra = w;
+          uraWindow = w;
         }
         await wait(700);
         await runRounds(scr, st.rounds, st.payout);
         await wait(700);
-        if (!uraShown) uraWindow = null;
+        if (w && uraWindow === w) uraWindow = null;
+        if (bonusUra === w) bonusUra = null;
         scr.remove();
       },
       async challenge(st) {
@@ -1367,6 +1373,7 @@
       const per = Math.floor(payout / rounds);
       let paid = 0;
       for (let r = 1; r <= rounds; r++) {
+        if (aborted()) break; // リセット・コンプリートで打ち切り
         scr.querySelector(".round").textContent = `ROUND ${r} / ${rounds}`;
         const countEl = scr.querySelector(".count");
         const base = paid;
@@ -1378,7 +1385,8 @@
             })
           : null;
         if (got == null) {
-          const amt = r === rounds ? payout - paid : per;
+          // 途中で盤面をOFFにしたときは、盤面のラウンドで払いすぎた分を差し引かない
+          const amt = r === rounds ? Math.max(0, payout - paid) : per;
           paid += amt;
           handlers.onPayout && handlers.onPayout(amt);
           await wait(170);
@@ -1393,8 +1401,10 @@
       return paid;
     }
 
+    const aborted = () => !!(handlers.aborted && handlers.aborted());
     async function play(steps, opts = {}) {
       for (const st of steps) {
+        if (aborted()) break;
         if (st.info) handlers.onLog && handlers.onLog(st.info);
         const fn = RUN[st.t];
         if (fn) await fn(st, opts);

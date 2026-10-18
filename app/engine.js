@@ -440,6 +440,13 @@
       return g.options[0];
     }
 
+    // ハズレ時にリーチへ発展する割合
+    function missReachRate() {
+      const g = D.NORMAL_REACH;
+      const norm = shareNorm(g);
+      return Math.min(1, g.options.reduce((a, o) => a + missWeight(o, P.spin, norm), 0));
+    }
+
     // 先バレした保留より前の変動（先バレ演出中）。予告もリーチもなく、すぐにハズレで止まる
     function quietScenario(hold) {
       const digits = missDigits(null);
@@ -489,9 +496,20 @@
         }
       }
 
-      let reach = pick(D.NORMAL_REACH, out, P.spin, S.hitRushRate);
-      // 先バレした保留は、ハズレでも必ずリーチまでは発展する（実機と同じく先バレからの素ハズレはない）
-      if (!reach && (hold.senbare || hold.forcedDrop) && !out.hit) reach = pickMissReach();
+      let reach;
+      if (!out.hit && (hold.senbare || hold.forcedDrop)) {
+        // 先バレした保留は、ハズレでも必ずリーチまでは発展する（実機と同じく先バレからの素ハズレはない）
+        reach = pickMissReach();
+      } else if (!out.hit && dropMovedToEntry(custom) && D.SENBARE[custom.senbare]) {
+        // その分、先バレしていないハズレのリーチを減らして、ハズレ全体のリーチ率（＝リーチの信頼度）をデータどおりに保つ
+        const m = missReachRate();
+        const g = D.SENBARE[custom.senbare];
+        const q = g.options.reduce((a, o) => a + missWeight(o, P.spin, shareNorm(g)), 0); // ハズレのうち先バレする割合
+        const k = m > q ? (m - q) / ((1 - q) * m) : 0; // q + (1 - q) * k * m = m
+        reach = rng() < k * m ? pickMissReach() : null;
+      } else {
+        reach = pick(D.NORMAL_REACH, out, P.spin, S.hitRushRate);
+      }
 
       if (reach) {
         for (const g of D.NORMAL_PRE_REACH) {
