@@ -9,9 +9,9 @@
 
   const DEFAULT_CUSTOM = { senbare: "s40", sakiyomi: "osusume", leverBuru: "off", impact: "off", rushMode: "default", challenge: "koumakan", chargeMode: "toppa" };
   const DEFAULT_SETTINGS = { boardV: 9, board: "on", shot: "left", autoShot: "on", leftStrength: 40, rightStrength: 90, hesoOpen: 2.25, rate: 18, speed: "real", speedX: 1, autoPush: "off", sound: "on", bgm: "off", volume: 0.7, vibe: "on", showRel: "on", presetYakumono: "std", presetSenbare: "std", spec: "middle", tomeuchi: "on", complete: 95000 };
-  const SPEED_MAX = 100; // 倍速の上限
+  const SPEED_MAX = 300; // 倍速の上限
   // 倍速スライダーの目盛り（低い倍速を細かく選べるように、上ほど間隔を広げる）
-  const SPEED_STEPS = [1, 1.5, 2, 2.5, 3, 4, 5, 6, 7, 8, 10, 12, 15, 20, 25, 30, 40, 50, 60, 70, 80, 90, 100];
+  const SPEED_STEPS = [1, 1.5, 2, 2.5, 3, 4, 5, 6, 7, 8, 10, 12, 15, 20, 25, 30, 40, 50, 60, 70, 80, 90, 100, 120, 150, 200, 250, 300];
   const speedIndex = (x) => SPEED_STEPS.reduce((bi, v, i) => (Math.abs(v - x) < Math.abs(SPEED_STEPS[bi] - x) ? i : bi), 0);
   const SPEED_LABEL = { real: "実機", normal: "短め" }; // 変動の長さ
   const DEFAULT_DEV = { overrides: {}, force: "none", senbare: "off", rush6000: null, dropBtn: "on" };
@@ -190,7 +190,7 @@
   }
 
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-  // 倍速（1〜100倍）。演出・待ち時間は 1/倍速 になる
+  // 倍速（1〜300倍）。演出・待ち時間は 1/倍速 になる
   const speedX = () => Math.max(1, Math.min(SPEED_MAX, +state.settings.speedX || 1));
   const speedFactor = () => 1 / speedX();
 
@@ -306,7 +306,7 @@
     board.strength = state.settings.leftStrength;
     boardView = B.createBoardView($("board"), board);
     let last = performance.now();
-    let perfCap = SPEED_MAX;
+    let perfCap = 20; // 低めから始めて、追いつくぶんだけ上げる（起動直後に重い1フレームで固まらないように）
     const frame = (t) => {
       // 先に次のフレームを予約しておく（途中で例外が出ても盤面が止まらないように）
       requestAnimationFrame(frame);
@@ -1307,7 +1307,7 @@
       body += field("回転率（1000円あたり）", `ヘソへの入賞しやすさ。いまのスペック（${S.label}）の等価ボーダーは約${border().toFixed(1)}回転。保留が満タンのときの入賞は無駄になるので、実測はこれより少し下がる。`,
         `<input id="rateRange" class="range" type="range" min="12" max="26" step="0.5" value="${st.rate}">`, `<b id="rateVal">${st.rate}回転</b>`).replace("ヘソへの入賞しやすさ。", "物理盤面がOFFのときのヘソへの入賞しやすさ。");
       body += field("変動の長さ", "「実機」は実際の台に近い時間で動く。保留が少ないとハズレ変動は約7秒、保留3個以上で約2.5秒に短縮。「短め」は約1秒。", seg("settings.speed", SPEED_LABEL, st.speed));
-      body += field("倍速", "演出も盤面の玉の動き・打ち出しも、まとめて速くする（1〜100倍）。端末が追いつかないときは盤面だけ自動で控えめになる。", `<input id="speedRange" class="range" type="range" min="0" max="${SPEED_STEPS.length - 1}" step="1" value="${speedIndex(speedX())}">`, `<b id="speedVal">×${speedX()}</b>`);
+      body += field("倍速", "演出も盤面の玉の動き・打ち出しも、まとめて速くする（1〜300倍）。端末が追いつかないときは盤面の玉の動きだけ自動で控えめになる（演出はそのままの倍速）。", `<input id="speedRange" class="range" type="range" min="0" max="${SPEED_STEPS.length - 1}" step="1" value="${speedIndex(speedX())}">`, `<b id="speedVal">×${speedX()}</b>`);
       body += field("コンプリート（出玉の上限）", "総出玉がこの数に達すると遊技終了。実機は95,000発。0にすると上限なし。上げれば、コンプリートしたあとでも続けられる。",
         `<div class="drop-btns" style="grid-template-columns:1fr auto auto auto;align-items:center"><input class="num-in wide" type="number" inputmode="numeric" min="0" step="1000" data-complete value="${completeLimit()}" aria-label="コンプリートの出玉の上限"><button type="button" data-complete-set="95000">実機</button><button type="button" data-complete-set="200000">20万</button><button type="button" data-complete-set="0">なし</button></div>`,
         `<b>${completeLimit() ? fmt(completeLimit()) + "発" : "上限なし"}</b>`);

@@ -42,6 +42,7 @@
   const WALL_GAP = 0.05; // 壁と玉のすき間
   const G = 420;     // 重力 px/s^2
   const SUB = 1 / 240;
+  const pinKey = (gx, gy) => (gx + 100) * 1000 + gy + 100;
   const STAGE_CENTER = 0.2; // ステージに乗った玉のうち、中央から落ちる割合
   const WARP_RATE = 0.2;    // ワープ入口の前を通った玉のうち、中に入る割合
   const RAIL_FRICTION = 0.55;
@@ -212,21 +213,25 @@
       // ハカマ：命釘からヘソの口までの左右の壁
       this.hakama = [[HESO.x - g, INOCHI_Y, HESO.x - g + 0.5, HESO.y + 3], [HESO.x + g, INOCHI_Y, HESO.x + g - 0.5, HESO.y + 3]];
       this.hesoW = Math.max(HESO.w, g - 0.6); // ヘソの口の幅（ハカマの内側ぜんぶ）
-      this.grid = new Map();
+      // 10×10のマスごとに、まわり3×3マスの釘をまとめておく（毎回の検索で配列を作らないように）
+      const cell = new Map();
       for (const p of this.pins) {
-        const k = `${Math.floor(p[0] / 10)},${Math.floor(p[1] / 10)}`;
-        if (!this.grid.has(k)) this.grid.set(k, []);
-        this.grid.get(k).push(p);
+        const k = pinKey(Math.floor(p[0] / 10), Math.floor(p[1] / 10));
+        if (!cell.has(k)) cell.set(k, []);
+        cell.get(k).push(p);
+      }
+      this.grid = new Map();
+      for (let gx = -2; gx <= W / 10 + 2; gx++) for (let gy = -2; gy <= H / 10 + 2; gy++) {
+        const out = [];
+        for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) {
+          const a = cell.get(pinKey(gx + i, gy + j));
+          if (a) out.push(...a);
+        }
+        if (out.length) this.grid.set(pinKey(gx, gy), out);
       }
     }
     nearPins(x, y) {
-      const gx = Math.floor(x / 10), gy = Math.floor(y / 10);
-      const out = [];
-      for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) {
-        const a = this.grid.get(`${gx + i},${gy + j}`);
-        if (a) out.push(...a);
-      }
-      return out;
+      return this.grid.get(pinKey(Math.floor(x / 10), Math.floor(y / 10))) || NO_WALLS;
     }
     launch() {
       if (this.handlers.onFire && this.handlers.onFire() === false) return;
@@ -238,10 +243,10 @@
     }
     step(dt) {
       let t = dt;
+      let vmax = 0;
+      for (const b of this.balls) if (!b.lane && !b.stage) vmax = Math.max(vmax, Math.abs(b.vx) + Math.abs(b.vy));
       while (t > 0) {
         // 速い玉がいるときは細かく刻む（1回に玉の半径の半分ほどしか進まないように）
-        let vmax = 0;
-        for (const b of this.balls) if (!b.lane && !b.stage) vmax = Math.max(vmax, Math.abs(b.vx) + Math.abs(b.vy));
         const h = Math.min(SUB, 1.5 / Math.max(1, vmax), t);
         // 打ち出しも刻みごとに行う（高倍速で1フレームの時間が長くても、玉が同時に重なって飛ばないように）
         if (this.firing) {
@@ -251,7 +256,7 @@
             if (this.balls.length < 80) this.launch();
           }
         }
-        this.sub(h);
+        vmax = this.sub(h);
         t -= h;
       }
     }
@@ -462,6 +467,10 @@
         keep.push(b);
       }
       this.balls = keep;
+      // 次の刻みの幅を決めるための、いちばん速い玉の速さ
+      let vmax = 0;
+      for (const b of keep) if (!b.lane && !b.stage) vmax = Math.max(vmax, Math.abs(b.vx) + Math.abs(b.vy));
+      return vmax;
     }
   }
 
