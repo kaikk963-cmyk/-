@@ -26,8 +26,14 @@ OVERPASS_URLS = [
 def query_overpass(bbox):
     s, w, n, e = bbox
     q = f"""
-[out:json][timeout:180];
-way["highway"]({s},{w},{n},{e});
+[out:json][timeout:300];
+(
+  way["highway"]({s},{w},{n},{e});
+  way["building"]({s},{w},{n},{e});
+  way["barrier"="guard_rail"]({s},{w},{n},{e});
+  node["highway"~"^(traffic_signals|street_lamp|stop|give_way)$"]({s},{w},{n},{e});
+  node["power"="pole"]({s},{w},{n},{e});
+);
 (._;>;);
 out body;
 """
@@ -66,11 +72,21 @@ def query_osm_api(bbox, step=0.04):
     return {"elements": list(merged.values())}
 
 
-def only_highways(data):
-    """道路 (highway=*) とそのノードだけ残す。"""
-    ways = [e for e in data["elements"] if e["type"] == "way" and "highway" in e.get("tags", {})]
+POINT_TAGS = {"highway": {"traffic_signals", "street_lamp", "stop", "give_way"}, "power": {"pole"}}
+
+
+def keep_relevant(data):
+    """道路・建物・ガードレールと、信号や街灯などの点だけ残す。"""
+    def want_way(t):
+        return "highway" in t or "building" in t or t.get("barrier") == "guard_rail"
+
+    def want_node(t):
+        return any(t.get(k) in v for k, v in POINT_TAGS.items())
+
+    ways = [e for e in data["elements"] if e["type"] == "way" and want_way(e.get("tags", {}))]
     used = {n for w in ways for n in w["nodes"]}
-    nodes = [e for e in data["elements"] if e["type"] == "node" and e["id"] in used]
+    nodes = [e for e in data["elements"] if e["type"] == "node"
+             and (e["id"] in used or want_node(e.get("tags", {})))]
     return {"elements": nodes + ways}
 
 
@@ -108,13 +124,14 @@ def main():
             print(ex)
             print("OSM 本体の API で取得します (少し時間がかかります)")
             data = query_osm_api(cfg["bbox"])
-    data = only_highways(data)
-    ways = [e for e in data["elements"] if e["type"] == "way"]
+    data = keep_relevant(data)
+    ways = [e for e in data["elements"] if e["type"] == "way" and "highway" in e["tags"]]
     if not ways:
         sys.exit("道路が見つかりませんでした。bbox を確認してください。")
 
     (out_dir / "osm.json").write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
-    print(f"{len(ways)} 本の way を {out_dir / 'osm.json'} に保存しました")
+    n_bld = sum(1 for e in data["elements"] if e["type"] == "way" and "building" in e["tags"])
+    print(f"道路 {len(ways)} 本 / 建物 {n_bld} 棟を {out_dir / 'osm.json'} に保存しました")
 
     # 主要な道路の名前だけ表示する (細い道まで出すと多すぎるため)
     major = {"motorway", "trunk", "primary", "secondary", "tertiary"}

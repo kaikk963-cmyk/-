@@ -94,6 +94,8 @@ def select_route(osm, rcfg):
         if ids:
             return w["id"] in ids
         t = w.get("tags", {})
+        if "highway" not in t:
+            return False
         if hw and t.get("highway") not in hw:
             return False
         if pat:
@@ -362,6 +364,22 @@ VIBRATION_GAIN=0.1
 VIBRATION_LENGTH=0.3
 
 [SURFACE_3]
+KEY=SIDEWALK
+FRICTION=0.90
+DAMPING=0
+WAV=
+WAV_PITCH=0
+FF_EFFECT=NULL
+DIRT_ADDITIVE=0
+IS_VALID_TRACK=1
+BLACK_FLAG_TIME=0
+SIN_HEIGHT=0
+SIN_LENGTH=0
+IS_PITLANE=0
+VIBRATION_GAIN=0
+VIBRATION_LENGTH=0
+
+[SURFACE_4]
 KEY=WALL
 FRICTION=0.30
 DAMPING=0

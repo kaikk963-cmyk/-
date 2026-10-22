@@ -1,3 +1,5 @@
 numpy
 Pillow
 requests
+mapbox_earcut
+mapbox-vector-tile

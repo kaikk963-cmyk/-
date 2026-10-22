@@ -23,6 +23,7 @@ from PIL import Image
 from build_track import (MAX_VERTS, SURFACES_INI, DemSampler, Mesh, Projection, frames,
                          make_textures, resample, smooth, write_map, write_obj)
 from fetch_dem import fetch_tiles
+from region_details import TerrainGrid, TriBucket, build_details, road_material
 
 # 道路種別ごとの既定の幅 [m] と重なり順 (交差点で上に来る方が大きい)
 ROAD_CLASSES = {
@@ -147,30 +148,73 @@ class Bucket:
             self.meshes[-1].add_grid(v, uv)
 
 
-def build_roads(segs):
-    road, wall = Bucket("1ROAD", "asphalt"), Bucket("1WALL", "guardrail")
-    for i, sg in enumerate(segs):
-        c, z, s_ = sg["center"], sg["z"], sg["s"]
-        if len(c) < 2:
+def grid_faces(rows, cols):
+    idx = np.arange(rows * cols).reshape(rows, cols)
+    a, b = idx[:-1, :-1].ravel(), idx[:-1, 1:].ravel()
+    c, d = idx[1:, 1:].ravel(), idx[1:, :-1].ravel()
+    return np.vstack([np.stack([a, b, c], 1), np.stack([a, c, d], 1)])
+
+
+def keep_points(c, z, tol=0.03, max_gap=12):
+    """路面メッシュ用に、直線部分の点を間引いた添字 (3D の Douglas-Peucker)。
+    max_gap 点以上は空けない (地形との段差やテクスチャの伸びを防ぐ)。"""
+    p = np.column_stack([c, z])
+    keep = np.zeros(len(p), dtype=bool)
+    keep[[0, -1]] = True
+    stack = [(0, len(p) - 1)]
+    while stack:
+        a, b = stack.pop()
+        if b - a < 2:
             continue
-        _, left = frames(c, False)
-        half = sg["width"] / 2
+        d = p[b] - p[a]
+        L = np.linalg.norm(d)
+        rel = p[a + 1:b] - p[a]
+        dist = np.linalg.norm(np.cross(rel, d), axis=1) / L if L > 1e-9 else np.linalg.norm(rel, axis=1)
+        i = int(dist.argmax())
+        if dist[i] > tol:
+            k = a + 1 + i
+        elif b - a > max_gap:
+            k = (a + b) // 2
+        else:
+            continue
+        keep[k] = True
+        stack += [(a, k), (k, b)]
+    return np.nonzero(keep)[0]
+
+
+def build_roads(segs, z_base, tex_dir, chunk_of):
+    """路面 (車線・中央線の入ったテクスチャ) と橋の欄干。場所ごとにメッシュを分ける。"""
+    out, made = TriBucket(chunk_of), set()
+    for i, sg in enumerate(segs):
+        if len(sg["center"]) < 2:
+            continue
         # 交差点で重なる面がちらつかないよう、格の高い道路をわずかに上げる
-        lift = 0.012 * sg["rank"] + 0.003 * (i % 3)
-        zz = z + lift
-        v = np.stack([np.column_stack([c + left * half, zz]), np.column_stack([c - left * half, zz])], axis=1)
-        uv = np.stack([np.column_stack([np.zeros_like(s_), s_ / (sg["width"] * 2)]),
-                       np.column_stack([np.ones_like(s_), s_ / (sg["width"] * 2)])], axis=1)
-        road.add(v, uv)
+        sg["lift"] = 0.012 * sg["rank"] + 0.003 * (i % 3)
+        _, left = frames(sg["center"], False)
+        k = keep_points(sg["center"], sg["z"])
+        c, s_, left = sg["center"][k], sg["s"][k], left[k]
+        half = sg["width"] / 2
+        zz = sg["z"][k] - z_base + sg["lift"]
+        mid = c[len(c) // 2]
+        for start in range(0, len(c) - 1, MAX_VERTS // 2 - 1):
+            sl = slice(start, start + MAX_VERTS // 2)
+            v = np.stack([np.column_stack([c[sl] + left[sl] * half, zz[sl]]),
+                          np.column_stack([c[sl] - left[sl] * half, zz[sl]])], axis=1)
+            uv = np.stack([np.column_stack([np.zeros_like(s_[sl]), s_[sl] / 10]),
+                           np.column_stack([np.ones_like(s_[sl]), s_[sl] / 10])], axis=1)
+            out.add("1ROAD", road_material(sg, tex_dir, made), mid[0], mid[1],
+                    v.reshape(-1, 3), uv.reshape(-1, 2), grid_faces(len(v), 2))
         if sg["bridge"]:  # 橋には欄干 (コリジョン壁) を付ける
             for side in (1, -1):  # 面が道路の内側を向く順に並べる
                 p = c + left * half * side
                 lo_, hi_ = np.column_stack([p, zz - 0.05]), np.column_stack([p, zz + 1.0])
-                pair = (hi_, lo_) if side > 0 else (lo_, hi_)
-                wall.add(np.stack(pair, axis=1),
-                         np.stack([np.column_stack([np.zeros_like(s_), s_ / 4]),
-                                   np.column_stack([np.ones_like(s_), s_ / 4])], axis=1))
-    return road.meshes + wall.meshes
+                v = np.stack((hi_, lo_) if side > 0 else (lo_, hi_), axis=1)
+                uv = np.stack([np.column_stack([np.zeros_like(s_), s_ / 4]),
+                               np.column_stack([np.ones_like(s_), s_ / 4])], axis=1)
+                out.add("1WALL", "guardrail", mid[0], mid[1], v.reshape(-1, 3), uv.reshape(-1, 2),
+                        grid_faces(len(v), 2))
+    print(f"路面テクスチャ {len(made)} 種類 (車線数・幅ごと)")
+    return out.all()
 
 
 # --------------------------------------------------------------------------- 地形
@@ -199,7 +243,13 @@ def photo_texture(lat, lon, pcfg, cache_dir, out_path):
     crop.resize((size, size), Image.LANCZOS).save(out_path)
     cx0, cy0 = int(x0 - ox) + ox, int(y0 - oy) + oy
     cw, ch = crop.size
-    return np.stack([(px - cx0) / cw, 1.0 - (py - cy0) / ch], axis=-1)
+
+    def uv(la, lo):  # 緯度経度 -> この写真の UV
+        qx, qy = merc_px(la, lo, z)
+        return (qx - cx0) / cw, 1.0 - (qy - cy0) / ch
+
+    u, v = uv(lat, lon)
+    return np.stack([u, v], axis=-1), uv
 
 
 def build_terrain(cfg, proj, dem, segs, z_base, tex_dir):
@@ -243,7 +293,7 @@ def build_terrain(cfg, proj, dem, segs, z_base, tex_dir):
     blended = (rz - 0.3) * (1 - t) + h * t
     h = np.where(near, under - 0.3, blended)
 
-    meshes, textures = [], {}
+    meshes, textures, photos = [], {}, {}
     rows = range(0, len(ys) - 1, chunk)
     cols = range(0, len(xs) - 1, chunk)
     total = len(rows) * len(cols)
@@ -252,14 +302,24 @@ def build_terrain(cfg, proj, dem, segs, z_base, tex_dir):
             sl = (slice(r0, r0 + chunk + 1), slice(c0, c0 + chunk + 1))
             name = f"photo_{ci:02d}_{cj:02d}"
             print(f"\r航空写真 {ci * len(cols) + cj + 1}/{total}", end="", flush=True)
-            uv = photo_texture(lat[sl], lon[sl], cfg["photo"], Path("data") / "photo_cache",
-                               tex_dir / f"{name}.png")
+            uv, uv_fn = photo_texture(lat[sl], lon[sl], cfg["photo"], Path("data") / "photo_cache",
+                                      tex_dir / f"{name}.png")
             m = Mesh(f"1GRASS_{ci:02d}_{cj:02d}", name)
             m.add_grid(np.stack([gx[sl], gy[sl], h[sl]], axis=2), uv)
             meshes.append(m)
             textures[name] = f"{name}.png"
+            photos[(ci, cj)] = {"x0": xs[c0], "x1": xs[min(c0 + chunk, len(xs) - 1)],
+                                "y0": ys[r0], "y1": ys[min(r0 + chunk, len(ys) - 1)],
+                                "path": tex_dir / f"{name}.png", "uv": uv_fn}
     print()
-    return meshes, textures
+
+    size = chunk * cell
+
+    def chunk_of(x, y):
+        return (min(max(int((y - y0) // size), 0), len(rows) - 1),
+                min(max(int((x - x0) // size), 0), len(cols) - 1))
+
+    return meshes, textures, TerrainGrid(x0, y0, cell, h), chunk_of, photos
 
 
 # --------------------------------------------------------------------------- スタート位置
@@ -338,11 +398,9 @@ def main():
     print(f"道路の総延長 {km:.0f} km / 橋 {sum(sg['bridge'] for sg in segs)} / "
           f"トンネル {sum(sg['tunnel'] for sg in segs)} / 原点の標高 {z_base} m")
 
-    road_meshes = build_roads(segs)
-    for m in road_meshes:  # 道路も原点の標高ぶん下げる
-        m.v = [v - [0, 0, z_base] for v in m.v]
-    terrain, textures = build_terrain(cfg, proj, dem, segs, z_base, tex_dir)
-    meshes = road_meshes + terrain
+    terrain, textures, grid, chunk_of, photos = build_terrain(cfg, proj, dem, segs, z_base, tex_dir)
+    meshes = build_roads(segs, z_base, tex_dir, chunk_of) + terrain
+    meshes += build_details(cfg, proj, dem, segs, grid, chunk_of, photos, tex_dir, osm, data_dir, z_base)
 
     write_obj(meshes, build / "track.obj", textures)
     make_textures(tex_dir)
@@ -350,6 +408,11 @@ def main():
     (build / "markers.json").write_text(json.dumps(markers, indent=1), encoding="utf-8")
 
     (track_dir / "data" / "surfaces.ini").write_text(SURFACES_INI, encoding="utf-8")
+    # 地形・道路 / 建物などの小物 / 木 を別々の kn5 にして、まとめて読み込ませる
+    models = [tid, f"{tid}_objects", f"{tid}_trees"]
+    (track_dir / "models.ini").write_text("".join(
+        f"[MODEL_{i}]\nFILE={m}.kn5\nPOSITION=0,0,0\nROTATION=0,0,0\n\n" for i, m in enumerate(models)),
+        encoding="utf-8")
     write_map([sg["center"] for sg in segs], track_dir, size=2048, width=3)
     ui = {
         "name": cfg["name"],

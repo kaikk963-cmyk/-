@@ -109,13 +109,19 @@ hakone_turnpike/
 ![長瀞上空](docs/preview_nagatoro.jpg)
 ![皆野の道路](docs/preview_minano.jpg)
 
-生成結果の目安 (この例): 道路 1,557 km / 橋 595 / 地形 3.8M 頂点 / 航空写真 234 枚 (約 440MB の PNG)、
-生成に約 10 分 (初回はダウンロード込み)。
+![本庄駅周辺](docs/preview_honjo.jpg)
+![長瀞の町](docs/preview_town.jpg)
+![本庄の道路 (電柱・電線)](docs/preview_street.jpg)
+
+生成結果の目安 (この例): 道路 1,557 km / 建物 27.4 万棟 / 木 15 万本 / 信号 1,434 / 電柱 2.1 万本 /
+ガードレール 82 km、合計約 1,170 万頂点。生成に約 8 分 + Blender 1 分 (初回はダウンロード込みでさらに 30 分ほど)。
 
 ```bash
-python tools/fetch_osm.py  config/honjo_chichibu.json
-python tools/fetch_dem.py  config/honjo_chichibu.json
-python tools/build_region.py config/honjo_chichibu.json
+python tools/fetch_osm.py       config/honjo_chichibu.json   # 道路・建物・信号など (OSM)
+python tools/fetch_dem.py       config/honjo_chichibu.json   # 標高
+python tools/fetch_buildings.py config/honjo_chichibu.json   # 建物 (地理院ベクトルタイル。OSM に無い建物を補う)
+MAPILLARY_TOKEN=MLY|xxxx python tools/fetch_mapillary.py config/honjo_chichibu.json   # 任意
+python tools/build_region.py    config/honjo_chichibu.json
 blender -b -P blender/import_to_blender.py -- out/honjo_chichibu/build
 ```
 
@@ -126,12 +132,42 @@ blender -b -P blender/import_to_blender.py -- out/honjo_chichibu/build
 | `terrain.cell_m` | 地形の細かさ。広域なので 20m 程度 (小さくすると頂点数が急増) |
 | `terrain.chunk_cells` | 地形を何マスごとに分けるか。1 チャンクに航空写真 1 枚 |
 | `photo.zoom` / `photo.tex_size` | 航空写真の解像度。17 / 2048 にすると綺麗だがダウンロードと容量が 4 倍 |
+| `buildings.max_distance_from_road` | 道路からこの距離 [m] 以内の建物だけ置く (遠くまで置くと重い) |
+| `trees.spacing_m` / `band_m` / `max_count` | 木の間隔、道路からの距離の範囲 [m]、本数の上限 |
+| `details.*` | 歩道・ガードレール・街灯・標識・電柱をそれぞれ ON/OFF |
 
-- 道路は交差点ごとに区間に分け、交差点の高さを共有するので段差ができません
-- 橋 (`bridge=*`) は地形に沿わせず両端を結び、欄干の壁を付けます
-- トンネル (`tunnel=*`) も両端を直線で結びますが、**山に穴は開けません** (中に入ると空が見えます)
-- 地形には国土地理院の航空写真 (全国最新写真・シームレス) を貼ります
-- 信号・建物・木・白線の車線分けはまだありません
+### 入るもの
+
+| もの | 情報源 | 内容 |
+| --- | --- | --- |
+| 道路 | OSM | 交差点ごとに区間に分け、交差点の高さを共有 (段差なし)。車線数・一方通行・追越し禁止から白線 / 黄色線を描き分け |
+| 橋・トンネル | OSM | 橋は両端を結んで欄干付き。トンネルは**山に穴を開けない** (中に入ると空が見える) |
+| 地形 | 地理院 標高 + 航空写真 | 道路の周りは道路の高さに合わせて削る / 盛る |
+| 建物 | OSM + 地理院ベクトルタイル | 形はそのまま、高さは階数タグか種類から。小さい長方形の家は切妻の瓦屋根 |
+| 木 | 地理院 航空写真 | 道路から見える帯の中で、写真が濃い緑の所に杉 / 広葉樹 |
+| 歩道 | OSM `sidewalk=*` | 高さ 15cm の縁石付き (OSM に描かれている所だけ) |
+| ガードレール | 地形 + OSM | 路肩の外が 3m 以上落ち込む所 (山道の谷側) と OSM の `barrier=guard_rail` に白いガードレール |
+| 信号 | OSM (+ Mapillary) | 日本式の横型 3 灯を両方向に |
+| 電柱・電線 | OSM / Mapillary / 自動 | 位置が分かればそこに、無ければ町の中の道路の片側に 35m おき |
+| 標識 | OSM `maxspeed`・`highway=stop` (+ Mapillary) | 速度制限と止まれ |
+| 街灯 | OSM / Mapillary | 位置が分かる所だけ |
+
+Google ストリートビューは利用規約で地図データの作成に使うことが禁止されているので使いません。
+道路写真からの情報が欲しいときは、オープンライセンスの [Mapillary](https://www.mapillary.com/) を使います
+(`tools/fetch_mapillary.py`、無料のアクセストークンが必要)。
+
+### 出力と KsEditor での設定
+
+広域モードは重くなるので 3 つの FBX に分けて書き出し、`models.ini` でまとめて読み込みます。
+
+| FBX | 中身 | 物理 |
+| --- | --- | --- |
+| `<id>.fbx` | 地形・道路・歩道・ガードレール・スタート位置 | あり |
+| `<id>_objects.fbx` | 建物・電柱・電線・信号・標識 | なし (見た目だけ) |
+| `<id>_trees.fbx` | 木 | なし |
+
+それぞれ KsEditor で同じ名前の `.kn5` にしてトラックフォルダに入れてください。
+マテリアル `tree`・`guardrail_jp`・`signs` は透明部分があるので、シェーダーを **ksPerPixelAT** にします。
 
 ## うまくいかないとき
 
@@ -146,5 +182,6 @@ blender -b -P blender/import_to_blender.py -- out/honjo_chichibu/build
 
 配布する場合は以下の表記が必要です。
 
-- 道路データ: © OpenStreetMap contributors (ODbL)
-- 標高データ: 国土地理院 標高タイル
+- 道路・建物データ: © OpenStreetMap contributors (ODbL)
+- 標高・航空写真・建物: 国土地理院 (標高タイル / 全国最新写真 (シームレス) / ベクトルタイル)
+- Mapillary を使った場合: © Mapillary (CC BY-SA)
