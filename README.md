@@ -101,6 +101,38 @@ hakone_turnpike/
 **AI ライン** は自動生成できないので、ゲーム内で 1 周 (1 本) 走って記録します
 (Content Manager / CSP の AI ライン記録機能、またはデベロッパーアプリ)。`ai/fast_lane.ai` が無くても練習走行はできます。
 
+## 広域マップ (フリーローム) モード
+
+1 本のコースではなく、ある地域の道路網をまるごと走れるマップを作ります。
+例: `config/honjo_chichibu.json` (埼玉県 本庄市〜秩父郡 皆野・長瀞・小鹿野・東秩父・横瀬、約 24km × 35km)
+
+![長瀞上空](docs/preview_nagatoro.jpg)
+![皆野の道路](docs/preview_minano.jpg)
+
+生成結果の目安 (この例): 道路 1,557 km / 橋 595 / 地形 3.8M 頂点 / 航空写真 234 枚 (約 440MB の PNG)、
+生成に約 10 分 (初回はダウンロード込み)。
+
+```bash
+python tools/fetch_osm.py  config/honjo_chichibu.json
+python tools/fetch_dem.py  config/honjo_chichibu.json
+python tools/build_region.py config/honjo_chichibu.json
+blender -b -P blender/import_to_blender.py -- out/honjo_chichibu/build
+```
+
+| 項目 | 説明 |
+| --- | --- |
+| `highway` | 入れる道路の種別。`unclassified` (市町村道) や `residential` を足すと細い道も入るが重くなる |
+| `start` | スポーン位置 (緯度経度)。近くの道路にピットとグリッドが並ぶ |
+| `terrain.cell_m` | 地形の細かさ。広域なので 20m 程度 (小さくすると頂点数が急増) |
+| `terrain.chunk_cells` | 地形を何マスごとに分けるか。1 チャンクに航空写真 1 枚 |
+| `photo.zoom` / `photo.tex_size` | 航空写真の解像度。17 / 2048 にすると綺麗だがダウンロードと容量が 4 倍 |
+
+- 道路は交差点ごとに区間に分け、交差点の高さを共有するので段差ができません
+- 橋 (`bridge=*`) は地形に沿わせず両端を結び、欄干の壁を付けます
+- トンネル (`tunnel=*`) も両端を直線で結びますが、**山に穴は開けません** (中に入ると空が見えます)
+- 地形には国土地理院の航空写真 (全国最新写真・シームレス) を貼ります
+- 信号・建物・木・白線の車線分けはまだありません
+
 ## うまくいかないとき
 
 - **車が逆向きに出てくる** → `blender/import_to_blender.py` の `FLIP_START_DIRECTION = True` にして再実行

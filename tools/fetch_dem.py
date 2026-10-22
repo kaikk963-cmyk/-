@@ -10,13 +10,13 @@ import argparse
 import io
 import json
 import math
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import numpy as np
 import requests
 from PIL import Image
 
-GSI_URL = "https://cyberjapandata.gsi.go.jp/xyz/{layer}/{z}/{x}/{y}.png"
 MAX_ZOOM = {"dem5a_png": 15, "dem5b_png": 15, "dem5c_png": 15, "dem_png": 14}
 TILE = 256
 
@@ -37,17 +37,34 @@ def decode_png(img):
     return h
 
 
-def fetch_tile(layer, z, x, y, cache_dir):
-    path = cache_dir / layer / str(z) / str(x) / f"{y}.png"
+def fetch_tile(layer, z, x, y, cache_dir, ext="png"):
+    """地理院タイルを 1 枚取得 (キャッシュあり)。データの無いタイル (海など) は None。"""
+    path = cache_dir / layer / str(z) / str(x) / f"{y}.{ext}"
     if path.exists():
-        return Image.open(path)
-    r = requests.get(GSI_URL.format(layer=layer, z=z, x=x, y=y), timeout=60)
-    if r.status_code == 404:  # データの無いタイル (海など)
+        return Image.open(path) if path.stat().st_size else None
+    url = f"https://cyberjapandata.gsi.go.jp/xyz/{layer}/{z}/{x}/{y}.{ext}"
+    for attempt in range(4):
+        try:
+            r = requests.get(url, timeout=60)
+            break
+        except requests.RequestException:
+            if attempt == 3:
+                raise
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if r.status_code == 404:
+        path.write_bytes(b"")
         return None
     r.raise_for_status()
-    path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(r.content)
     return Image.open(io.BytesIO(r.content))
+
+
+def fetch_tiles(layer, z, xs, ys, cache_dir, ext="png", workers=8):
+    """{(x, y): Image or None} をまとめて並列取得する。"""
+    keys = [(x, y) for y in ys for x in xs]
+    with ThreadPoolExecutor(workers) as ex:
+        imgs = ex.map(lambda k: fetch_tile(layer, z, k[0], k[1], cache_dir, ext), keys)
+        return dict(zip(keys, imgs))
 
 
 def fetch_layer(layer, zoom, bbox, cache_dir):
@@ -56,16 +73,15 @@ def fetch_layer(layer, zoom, bbox, cache_dir):
     x0, y0 = lonlat_to_tile(w, n, z)
     x1, y1 = lonlat_to_tile(e, s, z)
     tx0, ty0, tx1, ty1 = int(x0), int(y0), int(x1), int(y1)
-    mosaic = np.full(((ty1 - ty0 + 1) * TILE, (tx1 - tx0 + 1) * TILE), np.nan)
+    mosaic = np.full(((ty1 - ty0 + 1) * TILE, (tx1 - tx0 + 1) * TILE), np.nan, dtype=np.float32)
     count = (tx1 - tx0 + 1) * (ty1 - ty0 + 1)
     print(f"{layer} z{z}: {count} タイル")
-    for ty in range(ty0, ty1 + 1):
-        for tx in range(tx0, tx1 + 1):
-            img = fetch_tile(layer, z, tx, ty, cache_dir)
-            if img is None:
-                continue
-            oy, ox = (ty - ty0) * TILE, (tx - tx0) * TILE
-            mosaic[oy:oy + TILE, ox:ox + TILE] = decode_png(img)
+    tiles = fetch_tiles(layer, z, range(tx0, tx1 + 1), range(ty0, ty1 + 1), cache_dir)
+    for (tx, ty), img in tiles.items():
+        if img is None:
+            continue
+        oy, ox = (ty - ty0) * TILE, (tx - tx0) * TILE
+        mosaic[oy:oy + TILE, ox:ox + TILE] = decode_png(img)
     return {"heights": mosaic, "zoom": z, "tile_x0": tx0, "tile_y0": ty0}
 
 
@@ -84,7 +100,7 @@ def main():
     cfg = json.loads(Path(args.config).read_text(encoding="utf-8"))
     out_dir = Path("data") / cfg["track_id"]
     out_dir.mkdir(parents=True, exist_ok=True)
-    bbox = expand_bbox(cfg["bbox"], cfg["terrain"]["margin_m"] + 100)
+    bbox = expand_bbox(cfg["bbox"], cfg["terrain"].get("margin_m", 0) + 100)
 
     for layer in cfg["dem"]["layers"]:
         d = fetch_layer(layer, cfg["dem"]["zoom"], bbox, Path("data") / "dem_cache")

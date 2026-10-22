@@ -187,18 +187,19 @@ class Mesh:
     def __init__(self, name, material):
         self.name, self.material = name, material
         self.v, self.uv, self.f = [], [], []
+        self.count = 0
 
     def add_grid(self, verts, uvs):
         """verts: (rows, cols, 3) を四角形格子として追加 (法線が上/内側を向く順序)。"""
         rows, cols = verts.shape[:2]
-        base = len(self.v)
-        self.v.extend(verts.reshape(-1, 3))
-        self.uv.extend(uvs.reshape(-1, 2))
-        idx = base + np.arange(rows * cols).reshape(rows, cols)
+        idx = self.count + np.arange(rows * cols).reshape(rows, cols)
+        self.v.append(verts.reshape(-1, 3))
+        self.uv.append(uvs.reshape(-1, 2))
         a, b = idx[:-1, :-1].ravel(), idx[:-1, 1:].ravel()
         c, d = idx[1:, 1:].ravel(), idx[1:, :-1].ravel()
-        self.f.extend(np.stack([a, b, c], 1))
-        self.f.extend(np.stack([a, c, d], 1))
+        self.f.append(np.stack([a, b, c], 1))
+        self.f.append(np.stack([a, c, d], 1))
+        self.count += rows * cols
 
 
 def ribbon(name, material, center, left, z, off0, off1, uv_width, closed, extra_z=(0.0, 0.0)):
@@ -270,13 +271,14 @@ def build_terrain(cfg, proj, dem, center, road_z, z_base, half_total):
 
 # --------------------------------------------------------------------------- 出力
 
-def write_obj(meshes, path):
+def write_obj(meshes, path, textures=None):
+    """textures: {マテリアル名: texture/ 内のファイル名}。省略時は <マテリアル名>.png。"""
     mtl = path.with_suffix(".mtl")
     with open(path, "w", encoding="utf-8") as f:
         f.write(f"mtllib {mtl.name}\n")
         vo = 1
         for m in meshes:
-            v, uv, fc = np.asarray(m.v), np.asarray(m.uv), np.asarray(m.f) + vo
+            v, uv, fc = np.concatenate(m.v), np.concatenate(m.uv), np.concatenate(m.f) + vo
             f.write(f"o {m.name}\nusemtl {m.material}\n")
             # Y-up: (x, z, -y)
             np.savetxt(f, np.column_stack([v[:, 0], v[:, 2], -v[:, 1]]), fmt="v %.3f %.3f %.3f")
@@ -285,8 +287,9 @@ def write_obj(meshes, path):
                        fmt="f %d/%d %d/%d %d/%d")
             vo += len(v)
     with open(mtl, "w", encoding="utf-8") as f:
-        for name in ("asphalt", "shoulder", "grass", "guardrail"):
-            f.write(f"newmtl {name}\nKd 1 1 1\nmap_Kd texture/{name}.png\n\n")
+        for name in dict.fromkeys(m.material for m in meshes):
+            tex = (textures or {}).get(name, f"{name}.png")
+            f.write(f"newmtl {name}\nKd 1 1 1\nmap_Kd texture/{tex}\n\n")
 
 
 def make_textures(tex_dir):
@@ -376,19 +379,22 @@ VIBRATION_LENGTH=0
 """
 
 
-def write_map(center, track_dir, size=1024, margin=20):
-    # AC 座標: x = 東, z = -北
-    ax, az = center[:, 0], -center[:, 1]
+def write_map(lines, track_dir, size=1024, margin=20, width=8):
+    """lines: XY 折れ線のリスト。AC 座標では x = 東, z = -北。"""
+    allp = np.concatenate(lines)
+    ax, az = allp[:, 0], -allp[:, 1]
     span = max(np.ptp(ax), np.ptp(az))
     scale = span / (size - 2 * margin)  # m / px
     w = int(np.ptp(ax) / scale) + 2 * margin
     h = int(np.ptp(az) / scale) + 2 * margin
     xoff = -ax.min() + margin * scale
     zoff = -az.min() + margin * scale
-    px = (ax + xoff) / scale
-    pz = (az + zoff) / scale
     img = Image.new("RGBA", (w, h), (0, 0, 0, 0))
-    ImageDraw.Draw(img).line(list(zip(px, pz)), fill=(255, 255, 255, 255), width=8, joint="curve")
+    draw = ImageDraw.Draw(img)
+    for line in lines:
+        px = (line[:, 0] + xoff) / scale
+        pz = (-line[:, 1] + zoff) / scale
+        draw.line(list(zip(px, pz)), fill=(255, 255, 255, 255), width=width, joint="curve")
     img.save(track_dir / "map.png")
     img.save(track_dir / "ui" / "outline.png")
     (track_dir / "data" / "map.ini").write_text(
@@ -481,11 +487,11 @@ def main():
     meshes += ribbon("1ROAD", "asphalt", center, left, z, half, -half, cfg["road_width"] * 2, closed)
     meshes += ribbon("2SHOULDER_L", "shoulder", center, left, z, half + sh, half, 4, closed, (-0.05, 0))
     meshes += ribbon("3SHOULDER_R", "shoulder", center, left, z, -half, -half - sh, 4, closed, (0, -0.05))
-    # ガードレール (コリジョン兼見た目)。両側に高さ 0.8m の壁
+    # ガードレール (コリジョン兼見た目)。両側に高さ 0.85m の壁、面は道路側を向く
     meshes += ribbon("1WALL_L", "guardrail", center, left, z - 0.05,
-                     half + sh, half + sh, 4, closed, (0.0, 0.85))
+                     half + sh, half + sh, 4, closed, (0.85, 0.0))
     meshes += ribbon("2WALL_R", "guardrail", center, left, z - 0.05,
-                     -half - sh, -half - sh, 4, closed, (0.85, 0.0))
+                     -half - sh, -half - sh, 4, closed, (0.0, 0.85))
     meshes += build_terrain(cfg, proj, dem, center, z, z_base, half + sh)
 
     write_obj(meshes, build / "track.obj")
@@ -494,7 +500,7 @@ def main():
     (build / "markers.json").write_text(json.dumps(markers, indent=1), encoding="utf-8")
 
     (track_dir / "data" / "surfaces.ini").write_text(SURFACES_INI, encoding="utf-8")
-    write_map(center, track_dir)
+    write_map([center], track_dir)
     ui = {
         "name": cfg["name"],
         "description": f"{cfg['name']} (OpenStreetMap + 国土地理院 標高タイル から生成)",
@@ -513,7 +519,7 @@ def main():
     (track_dir / "ui" / "ui_track.json").write_text(json.dumps(ui, ensure_ascii=False, indent=2), encoding="utf-8")
     shutil.copy(Path(args.config), build / "config.json")
 
-    nverts = sum(len(m.v) for m in meshes)
+    nverts = sum(m.count for m in meshes)
     print(f"メッシュ {len(meshes)} 個 / 頂点 {nverts:,} -> {build / 'track.obj'}")
     print(f"トラックフォルダ雛形 -> {track_dir}")
     print("次: blender -b -P blender/import_to_blender.py -- " + str(build))

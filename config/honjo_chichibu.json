@@ -1,0 +1,28 @@
+{
+  "track_id": "honjo_chichibu",
+  "name": "Honjo - Chichibu",
+  "city": "Honjo / Chichibu-gun, Saitama",
+  "country": "Japan",
+  "mode": "region",
+  "bbox": [35.975, 138.990, 36.290, 139.260],
+  "highway": ["motorway", "motorway_link", "trunk", "trunk_link", "primary", "primary_link",
+              "secondary", "secondary_link", "tertiary", "tertiary_link"],
+  "start": {"lat": 36.2368, "lon": 139.1875, "note": "本庄駅付近"},
+  "resample_step": 2.0,
+  "elevation_smooth_m": 40.0,
+  "terrain": {
+    "cell_m": 20.0,
+    "chunk_cells": 100,
+    "corridor_m": 60.0
+  },
+  "dem": {
+    "zoom": 15,
+    "layers": ["dem5a_png", "dem_png"]
+  },
+  "photo": {
+    "layer": "seamlessphoto",
+    "zoom": 16,
+    "tex_size": 1024
+  },
+  "pit_boxes": 10
+}
