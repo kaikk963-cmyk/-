@@ -1,0 +1,27 @@
+{
+  "track_id": "hakone_turnpike",
+  "name": "Hakone Turnpike",
+  "city": "Hakone",
+  "country": "Japan",
+  "bbox": [35.170, 139.060, 35.245, 139.130],
+  "route": {
+    "name_regex": "ターンパイク|Turnpike",
+    "highway": ["primary", "secondary", "tertiary", "trunk", "motorway", "unclassified"],
+    "way_ids": []
+  },
+  "road_width": 7.5,
+  "shoulder_width": 1.5,
+  "resample_step": 2.0,
+  "elevation_smooth_m": 40.0,
+  "terrain": {
+    "margin_m": 300.0,
+    "cell_m": 8.0,
+    "corridor_m": 25.0
+  },
+  "dem": {
+    "zoom": 15,
+    "layers": ["dem5a_png", "dem5b_png", "dem_png"]
+  },
+  "reverse": false,
+  "pit_boxes": 10
+}
