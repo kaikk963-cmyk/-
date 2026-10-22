@@ -12,11 +12,11 @@ import re
 from collections import Counter, defaultdict
 from pathlib import Path
 
-import mapbox_earcut as earcut
 import numpy as np
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
 from build_track import MAX_VERTS, Mesh, frames
+from buildings import BuildingMaker, PhotoColor, make_building_textures, signed_area, simplify_ring
 
 RNG_SEED = 7
 
@@ -218,46 +218,6 @@ def make_detail_textures(tex_dir):
     rng = np.random.default_rng(RNG_SEED)
     S = 256
 
-    # 外壁 (1 枚 = 幅 4m x 1 階 3m)。窓の配置で家・マンション・店・工場を描き分ける
-    def facade(name, wall, window, style):
-        img = _noise(rng, (S, S), wall, 6)
-        d = ImageDraw.Draw(img)
-        if style == "house":
-            d.rectangle([40, 70, 120, 170], fill=window)
-            d.rectangle([150, 90, 220, 150], fill=window)
-            d.line([(40, 120), (120, 120)], fill=wall, width=3)
-        elif style == "apartment":
-            d.rectangle([20, 60, 150, 190], fill=window)
-            d.rectangle([170, 60, 236, 230], fill=(90, 90, 95))  # 玄関ドア
-            d.rectangle([10, 195, 160, 205], fill=(200, 200, 200))  # ベランダ
-        elif style == "shop":
-            d.rectangle([10, 40, 246, 200], fill=window)
-            d.rectangle([0, 0, 255, 30], fill=(170, 60, 50))
-        elif style == "industrial":
-            for x in range(0, S, 16):
-                d.line([(x, 0), (x, S)], fill=tuple(int(c * 0.85) for c in wall), width=3)
-            d.rectangle([180, 40, 230, 80], fill=window)
-        img.save(tex_dir / f"{name}.png")
-
-    facade("wall_house1", (226, 220, 205), (70, 85, 100), "house")
-    facade("wall_house2", (196, 182, 160), (70, 85, 100), "house")
-    facade("wall_house3", (170, 172, 175), (60, 75, 92), "house")
-    facade("wall_apartment", (210, 208, 200), (80, 100, 120), "apartment")
-    facade("wall_shop", (200, 196, 188), (110, 135, 150), "shop")
-    facade("wall_industrial", (175, 182, 186), (80, 95, 110), "industrial")
-
-    def roof(name, base, stripes):
-        img = _noise(rng, (S, S), base, 8)
-        d = ImageDraw.Draw(img)
-        for y in range(0, S, stripes):
-            d.line([(0, y), (S, y)], fill=tuple(int(c * 0.75) for c in base), width=2)
-        img.save(tex_dir / f"{name}.png")
-
-    roof("roof_tile", (70, 75, 85), 16)       # 瓦
-    roof("roof_tile2", (110, 60, 50), 16)     # 赤茶の瓦
-    roof("roof_flat", (150, 150, 145), 64)    # 陸屋根
-    roof("roof_metal", (90, 110, 120), 12)    # トタン
-
     _noise(rng, (S, S), (150, 150, 146), 10).save(tex_dir / "concrete.png")
     _noise(rng, (S, S), (120, 122, 125), 6).save(tex_dir / "metal.png")
     sidewalk = _noise(rng, (S, S), (165, 160, 152), 10)
@@ -355,9 +315,28 @@ def lane_layout(sg):
     return fwd, lanes // 2, center
 
 
+UNPAVED = {"unpaved", "gravel", "dirt", "ground", "compacted", "fine_gravel", "earth", "grass", "sand", "mud"}
+
+
 def road_material(sg, tex_dir, made):
     """車線構成と幅に合わせた路面テクスチャを作り (なければ)、マテリアル名を返す。
     テクスチャの u は道路の左端 (進行方向の左) から右端、v は 10m で 1 周。"""
+    hw, surface = sg["tags"].get("highway", ""), sg["tags"].get("surface", "")
+    if hw == "track" or surface in UNPAVED:   # 林道・農道など舗装されていない道
+        if "road_gravel" not in made:
+            rng = np.random.default_rng(5)
+            img = _noise(rng, (256, 512), (128, 116, 98), 22, blur=0.8)
+            d = ImageDraw.Draw(img)
+            for u in (70, 186):  # 轍
+                d.rectangle([u - 18, 0, u + 18, 512], fill=(112, 102, 88))
+            img.filter(ImageFilter.GaussianBlur(1.2)).save(tex_dir / "road_gravel.png")
+            made.add("road_gravel")
+        return "road_gravel"
+    if hw in ("service", "living_street"):   # 私道・駐車場・生活道路は線なし
+        if "road_plain" not in made:
+            _noise(np.random.default_rng(6), (256, 512), (78, 78, 80), 10).save(tex_dir / "road_plain.png")
+            made.add("road_plain")
+        return "road_plain"
     fwd, bwd, center = lane_layout(sg)
     width = round(sg["width"] * 2) / 2
     name = f"road_{fwd}_{bwd}_{center}_{width:g}".replace(".", "p")
@@ -438,8 +417,8 @@ def build_details(cfg, proj, dem, segs, grid, chunk_of, photos, tex_dir, osm, da
     town = Mask(x0, y0, x1, y1, res=10.0)
     buildings = []
     if cfg.get("buildings", {}).get("enabled", True):
-        buildings = build_buildings(cfg, proj, osm, nodes, grid, road_mask, out, rng, town, inside,
-                                    data_dir, (x0, y0, x1, y1))
+        buildings = build_buildings(cfg, proj, osm, nodes, grid, road_mask, out, town, inside,
+                                    data_dir, (x0, y0, x1, y1), photos, chunk_of, tex_dir)
         stats["建物"] = len(buildings)
     for e in osm["elements"]:  # 住宅街の細い道も「町」の目印にする
         if e["type"] == "way" and e["tags"].get("highway") in ("residential", "living_street"):
@@ -581,58 +560,35 @@ def build_guardrails(segs, out, proj, dem, z_base, grid, osm, nodes):
 
 # --------------------------------------------------------------------------- 建物
 
-BUILDING_HEIGHTS = {"house": 6.0, "detached": 6.0, "residential": 7.0, "apartments": 12.0,
-                    "commercial": 9.0, "retail": 7.0, "industrial": 9.0, "warehouse": 8.0,
-                    "garage": 3.0, "shed": 3.0, "temple": 9.0, "shrine": 6.0, "school": 12.0,
-                    "hospital": 15.0, "farm_auxiliary": 4.5, "greenhouse": 3.5}
+GSI_CODES = {3101, 3102, 3103}  # 地理院の建物種別: 普通 / 堅ろう / 高層
 
 
-def _signed_area(p):
-    x, y = p[:, 0], p[:, 1]
-    return 0.5 * (np.dot(x, np.roll(y, -1)) - np.dot(y, np.roll(x, -1)))
-
-
-def _is_rect(p):
-    if len(p) != 4:
-        return False
-    for i in range(4):
-        a, b, c = p[i - 1], p[i], p[(i + 1) % 4]
-        u, v = a - b, c - b
-        cos = abs(np.dot(u, v)) / (np.linalg.norm(u) * np.linalg.norm(v) + 1e-9)
-        if cos > 0.26:  # 90 度 ± 15 度
-            return False
-    return True
-
-
-GSI_BUILDING_TAGS = {  # 地理院の建物種別 (ftCode) -> OSM 風のタグ
-    3101: {"building": "yes"},                                   # 普通建物
-    3102: {"building": "yes", "building:levels": "3"},           # 堅ろう建物
-    3103: {"building": "apartments", "building:levels": "10"},   # 高層建物
-}
-
-
-def build_buildings(cfg, proj, osm, nodes, grid, road_mask, out, rng, town, inside, data_dir, extent):
+def build_buildings(cfg, proj, osm, nodes, grid, road_mask, out, town, inside, data_dir, extent,
+                    photos, chunk_of, tex_dir):
     """OSM の建物を優先し、OSM に無い所は地理院ベクトルタイルの建物で埋める。"""
     bcfg = cfg.get("buildings", {})
     near = road_mask.dilated(bcfg.get("max_distance_from_road", 100))
     osm_mask = Mask(*extent)
+    maker = BuildingMaker(out, grid, PhotoColor(photos, chunk_of, proj), make_building_textures(tex_dir))
     polys = []
 
-    def place(bid, tags, ll, from_osm):
+    def place(bid, tags, ll, gsi_code):
         p = np.column_stack(proj.to_xy(ll[:, 0], ll[:, 1]))
-        area = _signed_area(p)
+        area = signed_area(p)
         if area < 0:
             p, area = p[::-1], -area  # 反時計回りにそろえる
         if not 12 <= area <= 60000:
             return
         p = simplify_ring(p)
+        if len(p) < 3:
+            return
         cx, cy = p.mean(axis=0)
         if not inside(cx, cy) or not near(cx, cy) or road_mask(cx, cy) or road_mask(p[:, 0], p[:, 1]).mean() > 0.4:
             return
-        if not from_osm and osm_mask(cx, cy):
+        if gsi_code and osm_mask(cx, cy):
             return  # OSM に同じ建物がある
-        build_one_building({"id": bid, "tags": tags}, p, area, grid, out, rng)
-        if from_osm:
+        maker.add(bid, tags, p, area, gsi_code)
+        if not gsi_code:
             osm_mask.polygon(p)
         town.polygon(p)
         polys.append(p)
@@ -643,7 +599,7 @@ def build_buildings(cfg, proj, osm, nodes, grid, road_mask, out, rng, town, insi
         nd = e["nodes"][:-1] if e["nodes"][0] == e["nodes"][-1] else e["nodes"]
         ll = np.array([(nodes[k]["lat"], nodes[k]["lon"]) for k in nd if k in nodes])
         if len(ll) >= 3:
-            place(e["id"], e["tags"], ll, True)
+            place(e["id"], e["tags"], ll, None)
     n_osm = len(polys)
 
     gsi = data_dir / "buildings_gsi.json"
@@ -652,93 +608,12 @@ def build_buildings(cfg, proj, osm, nodes, grid, road_mask, out, rng, town, insi
             ll = np.array(b["ring"])
             if len(ll) > 3 and np.allclose(ll[0], ll[-1]):
                 ll = ll[:-1]
-            place(10 ** 12 + i, GSI_BUILDING_TAGS.get(b["ft"], GSI_BUILDING_TAGS[3101]), ll, False)
+            place(10 ** 12 + i, {"building": "yes"}, ll, b["ft"] if b["ft"] in GSI_CODES else 3101)
         print(f"建物: OSM {n_osm} 棟 + 地理院 {len(polys) - n_osm} 棟")
     else:
         print("建物: OSM のみ (tools/fetch_buildings.py を実行すると地理院の建物で補えます)")
+    print("  種類:", " / ".join(f"{k} {v:,}" for k, v in sorted(maker.count.items(), key=lambda kv: -kv[1])))
     return polys
-
-
-def simplify_ring(p, tol=0.3):
-    """ほぼ一直線に並んだ頂点を間引く (地理院の建物は細かい頂点が多いので)。"""
-    p = list(p)
-    changed = True
-    while changed and len(p) > 3:
-        changed = False
-        for i in range(len(p)):
-            a, b, c = np.asarray(p[i - 1]), np.asarray(p[i]), np.asarray(p[(i + 1) % len(p)])
-            ac = c - a
-            L = np.linalg.norm(ac)
-            if L < 1e-6 or abs(ac[0] * (b - a)[1] - ac[1] * (b - a)[0]) / L < tol:
-                del p[i]
-                changed = True
-                break
-    return np.array(p)
-
-
-def build_one_building(e, p, area, grid, out, rng):
-    t = e["tags"]
-    kind = t.get("building", "yes")
-    m = re.match(r"[\d.]+", t.get("height", ""))
-    levels = t.get("building:levels", "")
-    if m:
-        height = float(m.group(0))
-    elif levels.isdigit():
-        height = int(levels) * 3.0 + 0.5
-    else:
-        height = BUILDING_HEIGHTS.get(kind, 3.0 if area < 30 else 6.0 if area < 250 else 9.0 if area < 1500 else 8.0)
-    if kind in ("apartments", "school", "hospital") or height >= 10:
-        wall, roof = "wall_apartment", "roof_flat"
-    elif kind in ("commercial", "retail") or t.get("shop"):
-        wall, roof = "wall_shop", "roof_flat"
-    elif kind in ("industrial", "warehouse", "factory", "farm_auxiliary", "greenhouse") or area > 1500:
-        wall, roof = "wall_industrial", "roof_metal"
-    else:
-        h = e["id"] % 3
-        wall, roof = f"wall_house{h + 1}", ("roof_tile2" if e["id"] % 5 == 0 else "roof_tile")
-    gz = grid.height(p[:, 0], p[:, 1])
-    z0, top = gz.min() - 0.3, gz.max() + height
-    n = len(p)
-    q = np.roll(p, -1, axis=0)
-    # 壁 (1 辺 1 枚。角で頂点を分けて、壁ごとに平らな陰影にする)。テクスチャは幅 4m x 高さ 3m で繰り返す
-    lens = np.linalg.norm(q - p, axis=1)
-    u_end = np.cumsum(lens) / 4
-    u_start = u_end - lens / 4
-    vh = (top - z0) / 3
-    verts = np.concatenate([np.column_stack([p, np.full(n, z0)]), np.column_stack([q, np.full(n, z0)]),
-                            np.column_stack([q, np.full(n, top)]), np.column_stack([p, np.full(n, top)])])
-    uvs = np.concatenate([np.column_stack([u_start, np.zeros(n)]), np.column_stack([u_end, np.zeros(n)]),
-                          np.column_stack([u_end, np.full(n, vh)]), np.column_stack([u_start, np.full(n, vh)])])
-    i = np.arange(n)
-    faces = np.vstack([np.stack([i, i + n, i + 2 * n], 1), np.stack([i, i + 2 * n, i + 3 * n], 1)])
-    cx, cy = p.mean(axis=0)
-    out.add("bld_wall", wall, cx, cy, verts, uvs, faces)
-
-    if roof.startswith("roof_tile") and _is_rect(p) and area < 400:
-        # 切妻屋根: 長い辺に沿って棟を通す
-        a, b, c, d = p
-        if np.linalg.norm(b - a) < np.linalg.norm(c - b):
-            a, b, c, d = b, c, d, a
-        short = np.linalg.norm(c - b)
-        rh = float(np.clip(short * 0.3, 1.0, 3.0))
-        rb, ra = (b + c) / 2, (d + a) / 2
-        P = lambda xy, z: (xy[0], xy[1], z)  # noqa: E731
-        v = [P(a, top), P(b, top), P(rb, top + rh), P(ra, top + rh),
-             P(c, top), P(d, top), P(ra, top + rh), P(rb, top + rh)]
-        ln = np.linalg.norm(b - a) / 4
-        sl = math.hypot(short / 2, rh) / 4
-        uv = [(0, 0), (ln, 0), (ln, sl), (0, sl)] * 2
-        out.add("bld_roof", roof, cx, cy, v, uv, [(0, 1, 2), (0, 2, 3), (4, 5, 6), (4, 6, 7)])
-        gv = [P(b, top), P(c, top), P(rb, top + rh), P(d, top), P(a, top), P(ra, top + rh)]
-        guv = [(0, vh), (short / 4, vh), (short / 8, vh + rh / 3)] * 2
-        out.add("bld_wall", wall, cx, cy, gv, guv, [(0, 1, 2), (3, 4, 5)])
-    else:
-        tri = earcut.triangulate_float64(p, np.array([n], dtype=np.uint32)).reshape(-1, 3)
-        v = np.column_stack([p, np.full(n, top)])
-        e1, e2 = p[tri[:, 1]] - p[tri[:, 0]], p[tri[:, 2]] - p[tri[:, 0]]
-        flip = (e1[:, 0] * e2[:, 1] - e1[:, 1] * e2[:, 0]) < 0
-        tri[flip] = tri[flip][:, [0, 2, 1]]  # 上向きにそろえる
-        out.add("bld_roof", roof, cx, cy, v, p / 4, tri)
 
 
 # --------------------------------------------------------------------------- 点で置くもの
@@ -970,7 +845,7 @@ def build_trees(cfg, segs, grid, photos, road_mask, bld_mask, proj, out, rng, z_
     tcfg = cfg.get("trees", {})
     spacing = tcfg.get("spacing_m", 9.0)
     band = tcfg.get("band_m", [4, 45])
-    max_count = tcfg.get("max_count", 150000)
+    max_count = tcfg.get("max_count", 250000)
     near = road_mask.dilated(band[1])
     clear = road_mask.dilated(band[0])
     bld = bld_mask.dilated(2)

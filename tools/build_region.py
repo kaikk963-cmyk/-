@@ -30,6 +30,7 @@ from region_details import TerrainGrid, TriBucket, build_details, road_material
 ROAD_CLASSES = {
     "motorway": (9.0, 6), "trunk": (8.0, 5), "primary": (7.0, 4),
     "secondary": (6.5, 3), "tertiary": (5.5, 2), "unclassified": (4.5, 1), "residential": (4.0, 1),
+    "living_street": (3.5, 1), "road": (4.0, 1), "service": (3.0, 0), "track": (2.8, 0),
 }
 LINK_WIDTH = 5.0
 
@@ -333,8 +334,8 @@ def place_markers(segs, proj, cfg, z_base):
     sx, sy = proj.to_xy(cfg["start"]["lat"], cfg["start"]["lon"])
     best = None
     for sg in segs:
-        if sg["bridge"] or sg["tunnel"] or sg["s"][-1] < need:
-            continue
+        if sg["bridge"] or sg["tunnel"] or sg["s"][-1] < need or sg["rank"] < 1:
+            continue  # 私道や林道にはスポーンさせない
         d = np.hypot(sg["center"][:, 0] - sx, sg["center"][:, 1] - sy)
         i = int(d.argmin())
         if best is None or d[i] < best[0]:
@@ -374,6 +375,7 @@ def place_markers(segs, proj, cfg, z_base):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("config")
+    ap.add_argument("--obj", action="store_true", help="Blender で編集する用の track.obj も書き出す (大きい)")
     args = ap.parse_args()
     cfg = json.loads(Path(args.config).read_text(encoding="utf-8"))
     tid = cfg["track_id"]
@@ -403,8 +405,9 @@ def main():
     meshes = build_roads(segs, z_base, tex_dir, chunk_of) + terrain
     meshes += build_details(cfg, proj, dem, segs, grid, chunk_of, photos, tex_dir, osm, data_dir, z_base)
 
-    write_obj(meshes, build / "track.obj", textures)
     make_textures(tex_dir)
+    if args.obj:
+        write_obj(meshes, build / "track.obj", textures)
     markers = place_markers(segs, proj, cfg, z_base)
     (build / "markers.json").write_text(json.dumps(markers, indent=1), encoding="utf-8")
 
@@ -431,9 +434,10 @@ def main():
     shutil.copy(Path(args.config), build / "config.json")
 
     nverts = sum(m.count for m in meshes)
-    print(f"メッシュ {len(meshes)} 個 / 頂点 {nverts:,} -> {build / 'track.obj'}")
+    print(f"メッシュ {len(meshes)} 個 / 頂点 {nverts:,}" + (f" -> {build / 'track.obj'}" if args.obj else ""))
     print(f"トラックフォルダ -> {track_dir}  (content/tracks/ にコピーすれば走れます)")
-    print("Blender で編集したい場合: blender -b -P blender/import_to_blender.py -- " + str(build))
+    if args.obj:
+        print("Blender で編集する場合: blender -b -P blender/import_to_blender.py -- " + str(build))
 
 
 if __name__ == "__main__":

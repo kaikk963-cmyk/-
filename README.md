@@ -48,6 +48,7 @@ python tools/fetch_dem.py config/hakone_turnpike.json
 
 Overpass API に繋がらない場合は [openstreetmap.org/export](https://www.openstreetmap.org/export) で範囲を `.osm` として保存し、
 `python tools/fetch_osm.py config/xxx.json --osm-file map.osm` で読み込めます。
+(Overpass が使えないときは OSM 本体の API を小さく分けて呼ぶので、自動でもたいてい取れます)
 
 ### 3. トラックを作る
 
@@ -115,7 +116,7 @@ python tools/build_region.py    config/honjo_chichibu.json   # out/honjo_chichib
 
 | 項目 | 説明 |
 | --- | --- |
-| `highway` | 入れる道路の種別。`unclassified` (市町村道) や `residential` を足すと細い道も入るが重くなる |
+| `highway` | 入れる道路の種別。例では国道・県道に加えて市町村道 (`unclassified`)・住宅街 (`residential`)・生活道路・私道 (`service`)・林道/農道 (`track`) まで全部入れている |
 | `start` | スポーン位置 (緯度経度)。近くの道路にピットとグリッドが並ぶ |
 | `terrain.cell_m` | 地形の細かさ。広域なので 20m 程度 (小さくすると頂点数が急増) |
 | `terrain.chunk_cells` | 地形を何マスごとに分けるか。1 チャンクに航空写真 1 枚 |
@@ -128,10 +129,10 @@ python tools/build_region.py    config/honjo_chichibu.json   # out/honjo_chichib
 
 | もの | 情報源 | 内容 |
 | --- | --- | --- |
-| 道路 | OSM | 交差点ごとに区間に分け、交差点の高さを共有 (段差なし)。車線数・一方通行・追越し禁止から白線 / 黄色線を描き分け |
+| 道路 | OSM | 交差点ごとに区間に分け、交差点の高さを共有 (段差なし)。車線数・一方通行・追越し禁止から白線 / 黄色線を描き分け。狭い道は外側線だけ、私道は線なし、林道・農道・未舗装は砂利 |
 | 橋・トンネル | OSM | 橋は両端を結んで欄干付き。トンネルは**山に穴を開けない** (中に入ると空が見える) |
 | 地形 | 地理院 標高 + 航空写真 | 道路の周りは道路の高さに合わせて削る / 盛る |
-| 建物 | OSM + 地理院ベクトルタイル | 形はそのまま、高さは階数タグか種類から。小さい長方形の家は切妻の瓦屋根 |
+| 建物 | OSM + 地理院ベクトルタイル | 形はそのまま。種類 (家・平屋・マンション・ビル・店・工場・物置) を OSM のタグか地理院の種別 (普通 / 堅ろう / 高層) と面積から決め、階数から高さを出す。家は切妻 / 寄棟屋根 (軒の出・軒天付き)、ビルは陸屋根 + パラペット。屋根の色は航空写真のその場所の色に一番近いもの (瓦・スレート・金属・陸屋根) |
 | 木 | 地理院 航空写真 | 道路から見える帯の中で、写真が濃い緑の所に杉 / 広葉樹 |
 | 歩道 | OSM `sidewalk=*` | 高さ 15cm の縁石付き (OSM に描かれている所だけ) |
 | ガードレール | 地形 + OSM | 路肩の外が 3m 以上落ち込む所 (山道の谷側) と OSM の `barrier=guard_rail` に白いガードレール |

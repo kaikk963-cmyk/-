@@ -6,7 +6,8 @@
   "mode": "region",
   "bbox": [35.975, 138.990, 36.290, 139.260],
   "highway": ["motorway", "motorway_link", "trunk", "trunk_link", "primary", "primary_link",
-              "secondary", "secondary_link", "tertiary", "tertiary_link"],
+              "secondary", "secondary_link", "tertiary", "tertiary_link",
+              "unclassified", "residential", "living_street", "road", "service", "track"],
   "start": {"lat": 36.18992, "lon": 139.13673, "note": "本庄市立児玉小学校 (児玉町児玉)"},
   "resample_step": 2.0,
   "elevation_smooth_m": 40.0,
@@ -25,7 +26,7 @@
     "tex_size": 1024
   },
   "buildings": {"enabled": true, "max_distance_from_road": 100},
-  "trees": {"enabled": true, "spacing_m": 9.0, "band_m": [4, 45], "max_count": 150000},
+  "trees": {"enabled": true, "spacing_m": 9.0, "band_m": [4, 45], "max_count": 250000},
   "details": {"sidewalks": true, "guardrails": true, "street_lamps": true,
               "speed_signs": true, "utility_poles": true},
   "pit_boxes": 10
