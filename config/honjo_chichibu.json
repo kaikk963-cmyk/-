@@ -7,7 +7,7 @@
   "bbox": [35.975, 138.990, 36.290, 139.260],
   "highway": ["motorway", "motorway_link", "trunk", "trunk_link", "primary", "primary_link",
               "secondary", "secondary_link", "tertiary", "tertiary_link"],
-  "start": {"lat": 36.2368, "lon": 139.1875, "note": "本庄駅付近"},
+  "start": {"lat": 36.18992, "lon": 139.13673, "note": "本庄市立児玉小学校 (児玉町児玉)"},
   "resample_step": 2.0,
   "elevation_smooth_m": 40.0,
   "terrain": {
