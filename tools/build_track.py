@@ -24,6 +24,8 @@ from pathlib import Path
 import numpy as np
 from PIL import Image, ImageDraw, ImageFilter
 
+from kn5 import write_track_kn5s
+
 EARTH_R = 6_378_137.0
 MAX_VERTS = 60_000  # kn5 は 1 メッシュ 65535 頂点まで
 
@@ -453,8 +455,8 @@ def place_markers(center, tangent, left, z, s, cfg, closed):
             m[f"AC_TIME_1_{side}"] = at(mid if mid < s[-1] else mid - s[-1], lat, 0)
         else:
             m[f"AC_TIME_1_{side}"] = at(finish, lat, 0)
-            m[f"AC_AB_START_{side}"] = at(line, lat, 0)
-            m[f"AC_AB_FINISH_{side}"] = at(finish, lat, 0)
+            m[f"AC_OPEN_START_{side}"] = at(line, lat, 0)
+            m[f"AC_OPEN_FINISH_{side}"] = at(finish, lat, 0)
     return m
 
 
@@ -518,6 +520,7 @@ def main():
     (build / "markers.json").write_text(json.dumps(markers, indent=1), encoding="utf-8")
 
     (track_dir / "data" / "surfaces.ini").write_text(SURFACES_INI, encoding="utf-8")
+    write_track_kn5s(track_dir, tid, meshes, markers, build / "texture", split=False)
     write_map([center], track_dir)
     ui = {
         "name": cfg["name"],
@@ -539,8 +542,8 @@ def main():
 
     nverts = sum(m.count for m in meshes)
     print(f"メッシュ {len(meshes)} 個 / 頂点 {nverts:,} -> {build / 'track.obj'}")
-    print(f"トラックフォルダ雛形 -> {track_dir}")
-    print("次: blender -b -P blender/import_to_blender.py -- " + str(build))
+    print(f"トラックフォルダ -> {track_dir}  (content/tracks/ にコピーすれば走れます)")
+    print("Blender で編集したい場合: blender -b -P blender/import_to_blender.py -- " + str(build))
 
 
 if __name__ == "__main__":

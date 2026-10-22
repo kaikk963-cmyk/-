@@ -699,15 +699,18 @@ def build_one_building(e, p, area, grid, out, rng):
     gz = grid.height(p[:, 0], p[:, 1])
     z0, top = gz.min() - 0.3, gz.max() + height
     n = len(p)
-    # 壁: 下と上の輪を 1 周 (+ 継ぎ目 1 点) 作って帯にする。テクスチャは幅 4m x 高さ 3m で繰り返す
-    ring = np.vstack([p, p[:1]])
-    u = np.r_[0, np.cumsum(np.linalg.norm(np.diff(ring, axis=0), axis=1))] / 4
+    q = np.roll(p, -1, axis=0)
+    # 壁 (1 辺 1 枚。角で頂点を分けて、壁ごとに平らな陰影にする)。テクスチャは幅 4m x 高さ 3m で繰り返す
+    lens = np.linalg.norm(q - p, axis=1)
+    u_end = np.cumsum(lens) / 4
+    u_start = u_end - lens / 4
     vh = (top - z0) / 3
-    m = n + 1
-    verts = np.concatenate([np.column_stack([ring, np.full(m, z0)]), np.column_stack([ring, np.full(m, top)])])
-    uvs = np.concatenate([np.column_stack([u, np.zeros(m)]), np.column_stack([u, np.full(m, vh)])])
+    verts = np.concatenate([np.column_stack([p, np.full(n, z0)]), np.column_stack([q, np.full(n, z0)]),
+                            np.column_stack([q, np.full(n, top)]), np.column_stack([p, np.full(n, top)])])
+    uvs = np.concatenate([np.column_stack([u_start, np.zeros(n)]), np.column_stack([u_end, np.zeros(n)]),
+                          np.column_stack([u_end, np.full(n, vh)]), np.column_stack([u_start, np.full(n, vh)])])
     i = np.arange(n)
-    faces = np.vstack([np.stack([i, i + 1, m + i + 1], 1), np.stack([i, m + i + 1, m + i], 1)])
+    faces = np.vstack([np.stack([i, i + n, i + 2 * n], 1), np.stack([i, i + 2 * n, i + 3 * n], 1)])
     cx, cy = p.mean(axis=0)
     out.add("bld_wall", wall, cx, cy, verts, uvs, faces)
 

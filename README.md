@@ -4,19 +4,18 @@ Assetto Corsa (アセコル) 用に、日本の実在の道路を再現したト
 
 - **道路の形** … OpenStreetMap (OSM)
 - **標高・地形** … 国土地理院 標高タイル (5m / 10m メッシュ)
-- **出力** … Blender 用メッシュ → FBX → KsEditor で `.kn5` 化
+- **出力** … `.kn5` 入りのトラックフォルダを直接作ります。`content/tracks/` にコピーするだけで走れます
+  (KsEditor は不要。Blender で手を加えたいとき用に FBX も出せます)
 
 ```
-config/*.json ──► fetch_osm.py ─┐
-                 fetch_dem.py ──┼─► build_track.py ─► Blender (import_to_blender.py) ─► FBX ─► KsEditor ─► .kn5
-                                └─ data/<id>/          out/<id>/build/                                     out/<id>/<id>/
+config/*.json ──► fetch_*.py ──► data/<id>/ ──► build_track.py / build_region.py ──► out/<id>/<id>/  (kn5 入りトラックフォルダ)
+                                                                                 └─► out/<id>/build/ (OBJ・テクスチャ → 任意で Blender / FBX)
 ```
 
 ## 必要なもの
 
 - Python 3.10+ (`pip install -r requirements.txt`)
-- [Blender](https://www.blender.org/) 3.6 以降
-- KsEditor (Assetto Corsa SDK。Steam の「ツール」から `Assetto Corsa SDK` をインストール)
+- 任意: [Blender](https://www.blender.org/) 3.6 以降 (モデルに手を加えたいときだけ)
 - 任意: Custom Shaders Patch / Content Manager (動作確認・AI ライン作成が楽)
 
 ## 使い方
@@ -50,7 +49,7 @@ python tools/fetch_dem.py config/hakone_turnpike.json
 Overpass API に繋がらない場合は [openstreetmap.org/export](https://www.openstreetmap.org/export) で範囲を `.osm` として保存し、
 `python tools/fetch_osm.py config/xxx.json --osm-file map.osm` で読み込めます。
 
-### 3. メッシュ生成
+### 3. トラックを作る
 
 ```bash
 python tools/build_track.py config/hakone_turnpike.json
@@ -66,26 +65,9 @@ python tools/build_track.py config/hakone_turnpike.json
 | `1GRASS_00`… | 地形 (65,535 頂点制限に合わせて分割) |
 | `AC_PIT_n` / `AC_START_n` / `AC_HOTLAP_START_0` | スポーン位置 |
 | `AC_TIME_0_L/R`, `AC_TIME_1_L/R` | 計測ライン |
-| `AC_AB_START_L/R`, `AC_AB_FINISH_L/R` | 片道 (A→B) コース用スタート / ゴール |
+| `AC_OPEN_START_L/R`, `AC_OPEN_FINISH_L/R` | 片道 (A→B) コース用スタート / ゴール |
 
-### 4. Blender で FBX 化
-
-```bash
-blender -b -P blender/import_to_blender.py -- out/hakone_turnpike/build
-```
-
-`out/hakone_turnpike/build/` に `track.blend` と `hakone_turnpike.fbx` ができます。
-建物や木、標識などを足したい場合は `track.blend` を開いて編集し、FBX を書き出し直してください
-(書き出し設定: 前方 `-Z` / 上 `Y` / 適用スケーリング `FBX単位スケール`)。
-
-### 5. KsEditor で kn5 化
-
-1. KsEditor で `hakone_turnpike.fbx` を開く (テクスチャは同じ場所の `texture/` から読まれる)
-2. マテリアルのシェーダーを設定 (目安: すべて `ksPerPixel`。ガードレールは両面表示にしたいなら `ksPerPixelAT` など)
-3. 物理面 (`1ROAD` など) にチェックが入っていることを確認
-4. `File > Save kn5` で `out/hakone_turnpike/hakone_turnpike/hakone_turnpike.kn5` に保存
-
-### 6. ゲームに入れる
+### 4. ゲームに入れる
 
 `out/hakone_turnpike/hakone_turnpike/` フォルダごと
 `steamapps/common/assettocorsa/content/tracks/` にコピーします。
@@ -97,6 +79,13 @@ hakone_turnpike/
 ├── data/  map.ini, surfaces.ini
 └── ui/    ui_track.json, outline.png  (preview.png は自分でスクショを置く)
 ```
+
+`.kn5` はツールが直接書き出します (形式はコミュニティで解析された version 5。
+[moppius/blender-assetto-corsa-tools](https://github.com/moppius/blender-assetto-corsa-tools) の出力と座標・面の向き・
+スタート位置の向きが一致することを確認済み)。
+
+**モデルに手を加えたい場合 (任意):** `blender -b -P blender/import_to_blender.py -- out/hakone_turnpike/build` で
+`track.blend` と FBX ができるので、Blender で編集して KsEditor か上記の Blender アドオンで kn5 にし直してください。
 
 **AI ライン** は自動生成できないので、ゲーム内で 1 周 (1 本) 走って記録します
 (Content Manager / CSP の AI ライン記録機能、またはデベロッパーアプリ)。`ai/fast_lane.ai` が無くても練習走行はできます。
@@ -114,15 +103,14 @@ hakone_turnpike/
 ![本庄の道路 (電柱・電線)](docs/preview_street.jpg)
 
 生成結果の目安 (この例): 道路 1,557 km / 建物 27.4 万棟 / 木 15 万本 / 信号 1,434 / 電柱 2.1 万本 /
-ガードレール 82 km、合計約 1,170 万頂点。生成に約 8 分 + Blender 1 分 (初回はダウンロード込みでさらに 30 分ほど)。
+ガードレール 82 km、合計約 1,450 万頂点 (kn5 4 つで約 880MB)。生成に約 10 分 (初回はダウンロード込みでさらに 30 分ほど)。
 
 ```bash
 python tools/fetch_osm.py       config/honjo_chichibu.json   # 道路・建物・信号など (OSM)
 python tools/fetch_dem.py       config/honjo_chichibu.json   # 標高
 python tools/fetch_buildings.py config/honjo_chichibu.json   # 建物 (地理院ベクトルタイル。OSM に無い建物を補う)
 MAPILLARY_TOKEN=MLY|xxxx python tools/fetch_mapillary.py config/honjo_chichibu.json   # 任意
-python tools/build_region.py    config/honjo_chichibu.json
-blender -b -P blender/import_to_blender.py -- out/honjo_chichibu/build
+python tools/build_region.py    config/honjo_chichibu.json   # out/honjo_chichibu/honjo_chichibu/ に kn5 入りで完成
 ```
 
 | 項目 | 説明 |
@@ -156,22 +144,19 @@ Google ストリートビューは利用規約で地図データの作成に使�
 道路写真からの情報が欲しいときは、オープンライセンスの [Mapillary](https://www.mapillary.com/) を使います
 (`tools/fetch_mapillary.py`、無料のアクセストークンが必要)。
 
-### 出力と KsEditor での設定
+### 出力
 
-広域モードは重くなるので 3 つの FBX に分けて書き出し、`models.ini` でまとめて読み込みます。
+広域モードは重くなるので kn5 を 3 つに分け、`models.ini` でまとめて読み込みます。
 
-| FBX | 中身 | 物理 |
-| --- | --- | --- |
-| `<id>.fbx` | 地形・道路・歩道・ガードレール・スタート位置 | あり |
-| `<id>_objects.fbx` | 建物・電柱・電線・信号・標識 | なし (見た目だけ) |
-| `<id>_trees.fbx` | 木 | なし |
-
-それぞれ KsEditor で同じ名前の `.kn5` にしてトラックフォルダに入れてください。
-マテリアル `tree`・`guardrail_jp`・`signs` は透明部分があるので、シェーダーを **ksPerPixelAT** にします。
+| kn5 | 中身 | 物理 | 遠くで消える距離 |
+| --- | --- | --- | --- |
+| `<id>.kn5` | 地形 (航空写真は DXT1 + ミップマップの DDS)・道路・歩道・ガードレール・スタート位置 | あり | なし |
+| `<id>_objects.kn5` | 建物・電柱・電線・信号・標識 | なし (見た目だけ) | 建物 2.5km / 電柱 700m / 電線 400m など |
+| `<id>_trees.kn5` | 木 (`ksPerPixelAT` で葉の形に抜く) | なし | 900m |
 
 ## うまくいかないとき
 
-- **車が逆向きに出てくる** → `blender/import_to_blender.py` の `FLIP_START_DIRECTION = True` にして再実行
+- **車が逆向きに出てくる** → config の `reverse` を切り替えるか、`start` の位置を変えて作り直す
 - **路面がガタガタ** → `elevation_smooth_m` を 60〜100 に
 - **地形が道路を突き抜ける / 崖が不自然** → `terrain.cell_m` を小さく、`terrain.corridor_m` を大きく
 - **違う道が選ばれる** → `fetch_osm.py` が表示する道路名を見て `name_regex` を調整、または `way_ids` で直接指定

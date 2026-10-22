@@ -23,6 +23,7 @@ from PIL import Image
 from build_track import (MAX_VERTS, SURFACES_INI, DemSampler, Mesh, Projection, frames,
                          make_textures, resample, smooth, write_map, write_obj)
 from fetch_dem import fetch_tiles
+from kn5 import write_track_kn5s
 from region_details import TerrainGrid, TriBucket, build_details, road_material
 
 # 道路種別ごとの既定の幅 [m] と重なり順 (交差点で上に来る方が大きい)
@@ -408,11 +409,8 @@ def main():
     (build / "markers.json").write_text(json.dumps(markers, indent=1), encoding="utf-8")
 
     (track_dir / "data" / "surfaces.ini").write_text(SURFACES_INI, encoding="utf-8")
-    # 地形・道路 / 建物などの小物 / 木 を別々の kn5 にして、まとめて読み込ませる
-    models = [tid, f"{tid}_objects", f"{tid}_trees"]
-    (track_dir / "models.ini").write_text("".join(
-        f"[MODEL_{i}]\nFILE={m}.kn5\nPOSITION=0,0,0\nROTATION=0,0,0\n\n" for i, m in enumerate(models)),
-        encoding="utf-8")
+    # 地形・道路 / 建物などの小物 / 木 を別々の kn5 にして、models.ini でまとめて読み込ませる
+    write_track_kn5s(track_dir, tid, meshes, markers, tex_dir, textures)
     write_map([sg["center"] for sg in segs], track_dir, size=2048, width=3)
     ui = {
         "name": cfg["name"],
@@ -434,8 +432,8 @@ def main():
 
     nverts = sum(m.count for m in meshes)
     print(f"メッシュ {len(meshes)} 個 / 頂点 {nverts:,} -> {build / 'track.obj'}")
-    print(f"トラックフォルダ雛形 -> {track_dir}")
-    print("次: blender -b -P blender/import_to_blender.py -- " + str(build))
+    print(f"トラックフォルダ -> {track_dir}  (content/tracks/ にコピーすれば走れます)")
+    print("Blender で編集したい場合: blender -b -P blender/import_to_blender.py -- " + str(build))
 
 
 if __name__ == "__main__":
