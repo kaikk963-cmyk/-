@@ -99,12 +99,14 @@ hakone_turnpike/
 ![長瀞上空](docs/preview_nagatoro.jpg)
 ![皆野の道路](docs/preview_minano.jpg)
 
+![児玉 (全道路・リアル建物版)](docs/preview_kodama.jpg)
+![児玉の道路の目線](docs/preview_kodama_street.jpg)
 ![本庄駅周辺](docs/preview_honjo.jpg)
 ![長瀞の町](docs/preview_town.jpg)
 ![本庄の道路 (電柱・電線)](docs/preview_street.jpg)
 
-生成結果の目安 (この例): 道路 1,557 km / 建物 27.4 万棟 / 木 15 万本 / 信号 1,434 / 電柱 2.1 万本 /
-ガードレール 82 km、合計約 1,450 万頂点 (kn5 4 つで約 880MB)。生成に約 10 分 (初回はダウンロード込みでさらに 30 分ほど)。
+生成結果の目安 (この例、全道路): 建物 32.6 万棟 / 木 25 万本 / 信号 1,440 / 電柱 10.7 万本 /
+ガードレール 315 km、合計約 2,400 万頂点 (kn5 6 つで約 1.3GB)。生成に約 13 分 (初回はダウンロード込みでさらに 30 分ほど)。
 
 ```bash
 python tools/fetch_osm.py       config/honjo_chichibu.json   # 道路・建物・信号など (OSM)
