@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#111418">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="マイク音量">
+  <title>マイク音量調整</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="app">
+    <header class="top">
+      <h1>マイク音量調整</h1>
+      <span id="status" class="status">停止中</span>
+    </header>
+
+    <section class="card">
+      <button id="powerBtn" class="power" type="button" aria-pressed="false">
+        <span class="power-icon" aria-hidden="true">🎙️</span>
+        <span id="powerLabel">マイクを開始</span>
+      </button>
+      <p id="error" class="error" role="alert" hidden></p>
+    </section>
+
+    <section class="card">
+      <div class="row">
+        <label for="gain">音量（ゲイン）</label>
+        <output id="gainOut" for="gain">0.0 dB</output>
+      </div>
+      <input id="gain" type="range" min="-24" max="24" step="0.5" value="0">
+      <div class="presets">
+        <button type="button" data-gain="-12">小さく</button>
+        <button type="button" data-gain="0">標準</button>
+        <button type="button" data-gain="6">やや大</button>
+        <button type="button" data-gain="12">大きく</button>
+        <button type="button" data-gain="20">最大</button>
+      </div>
+      <p class="hint" id="gainHint">×1.00（元の音量）</p>
+    </section>
+
+    <section class="card">
+      <div class="meter-block">
+        <div class="row small"><span>入力（元の音）</span><span id="inDb">-∞ dB</span></div>
+        <div class="meter"><div id="inBar" class="bar"></div><div id="inPeak" class="peak"></div></div>
+      </div>
+      <div class="meter-block">
+        <div class="row small">
+          <span>出力（調整後）<span id="clip" class="clip" hidden>CLIP</span></span>
+          <span id="outDb">-∞ dB</span>
+        </div>
+        <div class="meter"><div id="outBar" class="bar"></div><div id="outPeak" class="peak"></div></div>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="row">
+        <span>録音</span>
+        <span id="recTime" class="mono">00:00</span>
+      </div>
+      <button id="recBtn" class="rec" type="button" disabled>● 録音開始</button>
+      <div id="recResult" class="rec-result" hidden>
+        <audio id="player" controls></audio>
+        <a id="download" class="download" download>ファイルを保存</a>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>設定</h2>
+      <label class="switch">
+        <input id="limiter" type="checkbox" checked>
+        <span>リミッター（音割れ防止）</span>
+      </label>
+      <label class="switch">
+        <input id="monitor" type="checkbox">
+        <span>モニター再生（イヤホン推奨・ハウリング注意）</span>
+      </label>
+      <label class="switch">
+        <input id="agc" type="checkbox">
+        <span>自動音量調整（OS/ブラウザ）</span>
+      </label>
+      <label class="switch">
+        <input id="ns" type="checkbox">
+        <span>ノイズ抑制</span>
+      </label>
+      <label class="switch">
+        <input id="ec" type="checkbox">
+        <span>エコーキャンセル</span>
+      </label>
+      <div class="field">
+        <label for="device">使用するマイク</label>
+        <select id="device"><option value="">既定のマイク</option></select>
+      </div>
+    </section>
+
+    <footer class="foot">
+      <p>※ スマホ本体（OS）のマイク感度そのものは変更できません。このアプリ内で音声を増幅・減衰し、モニターや録音に反映します。</p>
+    </footer>
+  </main>
+  <script src="app.js"></script>
+</body>
+</html>
