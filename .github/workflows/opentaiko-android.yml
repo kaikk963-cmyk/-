@@ -1,0 +1,58 @@
+name: OpenTaiko Android APK
+
+# ビルドスクリプトかこのファイルを変更して push すると自動実行。
+# main に取り込んだ後は Actions タブ →「OpenTaiko Android APK」→「Run workflow」でも手動実行できる。
+on:
+  push:
+    paths:
+      - "opentaiko-android/**"
+      - ".github/workflows/opentaiko-android.yml"
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "OpenTaiko のコミット/ブランチ（空欄なら検証済みの固定コミット）"
+        required: false
+        default: ""
+      abis:
+        description: "arm64（実機用・小さい） / all（エミュレータ用 x86_64 も含む）"
+        required: false
+        default: "arm64"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: "platforms;android-36 build-tools;36.0.0"
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Install .NET Android workload
+        run: dotnet workload install android
+
+      - name: Build
+        env:
+          OPENTAIKO_REF: ${{ inputs.ref }}
+          ABIS: ${{ inputs.abis }}
+        run: |
+          [ -n "$OPENTAIKO_REF" ] || unset OPENTAIKO_REF
+          export JAVA_SDK="$JAVA_HOME" ANDROID_SDK="$ANDROID_HOME"
+          bash opentaiko-android/build.sh "$RUNNER_TEMP/opentaiko"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: OpenTaiko-android-apk
+          path: ${{ runner.temp }}/opentaiko/out/*.apk
+          compression-level: 0
+          retention-days: 14

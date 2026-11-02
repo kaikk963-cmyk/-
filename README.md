@@ -1,3 +1,35 @@
+# OpenTaiko（TJAPlayer3系）の Android ビルド
+
+[OpenTaiko](https://github.com/0auBSQ/OpenTaiko)（TJAPlayer3-Develop-ReWrite の後継・MIT ライセンス）を
+Android 用 APK にビルドする仕組みです。OpenTaiko にはすでに Android 版のコード（`OpenTaiko.Android`）が
+入っていますが、上流のビルド手順は Windows（PowerShell）専用なので、Linux / GitHub Actions 用に作り直しています。
+
+- `opentaiko-android/build.sh` … ビルドスクリプト（ソース取得 → BASS・FFmpeg 取得 → APK 作成）
+- `.github/workflows/opentaiko-android.yml` … GitHub Actions でビルドし、APK を Artifacts に置く
+
+### APK の入手
+
+GitHub の **Actions** タブ →「OpenTaiko Android APK」→ 最新の実行 → 下の **Artifacts** から
+`OpenTaiko-android-apk` をダウンロード（zip の中に APK）。約 580MB。
+
+### 端末での使い方
+
+- 初回起動時にゲームデータ（約 600MB）を展開するので、空き容量は 1.5GB 以上あると安心です。
+- 曲は同梱されていません。初回起動時に公式サウンドトラックのダウンロードを提案されます。
+  自分の譜面は `Android/data/com.opentaiko.OpenTaiko/files/Songs/` に置きます（USB 接続で見えます）。
+- 操作はタッチ（画面の太鼓エリア：中央がドン、左右がカッ）または外付けキーボード。
+
+### 主な設定（build.sh の環境変数）
+
+| 変数 | 既定 | 内容 |
+|---|---|---|
+| `OPENTAIKO_REF` | 検証済みの固定コミット | ビルドする OpenTaiko のバージョン |
+| `ABIS` | `arm64` | `arm64`＝実機専用（小さい） / `all`＝エミュレータ用 x86_64 も含む |
+
+音声ライブラリ BASS（un4seen.com）は非商用なら無料のライセンスです。個人利用の範囲で使ってください。
+
+---
+
 # ネームプレートエディタ（Android）
 
 TJAPlayer3-Develop-ReWrite で使う `NamePlate.json` を、Android 上で作成・編集するアプリです。
