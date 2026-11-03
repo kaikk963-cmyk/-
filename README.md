@@ -5,12 +5,15 @@ Android 用 APK にビルドする仕組みです。OpenTaiko にはすでに An
 入っていますが、上流のビルド手順は Windows（PowerShell）専用なので、Linux / GitHub Actions 用に作り直しています。
 
 - `opentaiko-android/build.sh` … ビルドスクリプト（ソース取得 → BASS・FFmpeg 取得 → APK 作成）
-- `.github/workflows/opentaiko-android.yml` … GitHub Actions でビルドし、APK を Artifacts に置く
+- `.github/workflows/opentaiko-android.yml` … GitHub Actions でビルドし、APK を Releases に置く
 
 ### APK の入手
 
-GitHub の **Actions** タブ →「OpenTaiko Android APK」→ 最新の実行 → 下の **Artifacts** から
-`OpenTaiko-android-apk` をダウンロード（zip の中に APK）。約 580MB。
+スマホのブラウザでこのリンクを開くと、最新版の APK（約 580MB）が直接ダウンロードされます（GitHub ログイン不要）:
+
+https://github.com/kaikk963-cmyk/-/releases/latest/download/OpenTaiko-android-arm64.apk
+
+過去の版はリポジトリの **Releases** ページにあります。
 
 ### 端末での使い方
 

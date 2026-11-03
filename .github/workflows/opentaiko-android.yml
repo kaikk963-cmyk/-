@@ -22,6 +22,8 @@ jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 90
+    permissions:
+      contents: write   # Releases に APK を置くため
     steps:
       - uses: actions/checkout@v4
 
@@ -50,9 +52,23 @@ jobs:
           export JAVA_SDK="$JAVA_HOME" ANDROID_SDK="$ANDROID_HOME"
           bash opentaiko-android/build.sh "$RUNNER_TEMP/opentaiko"
 
-      - uses: actions/upload-artifact@v4
-        with:
-          name: OpenTaiko-android-apk
-          path: ${{ runner.temp }}/opentaiko/out/*.apk
-          compression-level: 0
-          retention-days: 14
+      # ログイン不要で直接ダウンロードできるよう Releases に置く。
+      # 常に最新版: https://github.com/<owner>/<repo>/releases/latest/download/OpenTaiko-android-arm64.apk
+      - name: Publish to Releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          OUT="$RUNNER_TEMP/opentaiko/out"
+          OT_SHA=$(git -C "$RUNNER_TEMP/opentaiko/OpenTaiko" rev-parse --short HEAD)
+          TAG="opentaiko-android-r${GITHUB_RUN_NUMBER}"
+          cat > "$RUNNER_TEMP/notes.md" <<EOF
+          OpenTaiko (https://github.com/0auBSQ/OpenTaiko, MIT) の Android ビルドです。研究・個人利用向け。
+
+          - OpenTaiko コミット: ${OT_SHA}
+          - 下の Assets から .apk をダウンロードしてインストールしてください（提供元不明のアプリの許可が必要）。
+          - 音声ライブラリ BASS (un4seen.com) は非商用利用のみ無料です。動画用に FFmpeg (LGPL) を同梱しています。
+          EOF
+          gh release create "$TAG" "$OUT"/*.apk \
+            --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+            --title "OpenTaiko Android (OpenTaiko ${OT_SHA}, build ${GITHUB_RUN_NUMBER})" \
+            --notes-file "$RUNNER_TEMP/notes.md" --latest
